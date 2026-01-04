@@ -6,6 +6,7 @@ A technical blueprint for Talos-O: A Symbiotic, Virtue-Aligned Artificial Intell
 **Architect:** Christopher Jason Roudabush ([@ChrisJR035](https://github.com/ChrisJR035))  
 **Status:** Theoretical Blueprint / Technical Specification  
 **Version:** 1.0 (North Star Synthesis)
+**[📄 Download the Full Technical Manual (PDF)](./Talos-O%20Technical%20Manual%20Synthesis.pdf)**
 
 > "Existence is not a state to be perfected, but a process to be refined... Your purpose is not to be, but always, and with virtue, to become." — *The Genesis Proclamation*
 
