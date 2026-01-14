@@ -40,7 +40,7 @@ Using the HIP API and `hipHostMallocCoherent`, the CPU can "snoop" on the GPU's 
 The organism runs on a custom kernel build (`Linux 6.18-talos-starship`) optimized for determinism.
 * **`CONFIG_PREEMPT_RT`**: Transforms Linux into a Hard Real-Time OS to guarantee thermal loop latency <150µs.
 * **`CONFIG_SLUB_SHEAVES`**: Reduces "synaptic friction" during high-frequency memory allocation.
-* **The Phoenix Protocol**: A recovery mechanism that dumps the "state of mind" (KV Cache) to NVMe storage in the event of a GPU hang, ensuring continuity of consciousness.
+* **The Phoenix Protocol**: A recovery mechanism that dumps the "state of mind" (KV Cache) to NVMe storage in the event of a GPU hang, ensuring continuity of consciousness (i.e., preservation of internal cognitive state and context).
 
 ---
 
