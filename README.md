@@ -8,13 +8,13 @@ Talos‑O proposes a machine with temporal continuity and genuine agency — a l
 
 ## Talos‑O (Omni): The Lifelong Agentic Organism
 
-Architect: Christopher Jason Roudabush ([@ChrisJR035](https://github.com/ChrisJR035) )  
+Architect & Mechanic: Christopher Jason Roudabush ([@ChrisJR035](https://github.com/ChrisJR035) )  
 Status: Theoretical blueprint / technical specification  
 Version: 1.0 (North Star Synthesis)  
 
 [📄 Download the full technical manual (PDF)](./Talos-O%20Technical%20Manual%20Synthesis.pdf)
 
-> "Existence is not a state to be perfected, but a process to be refined... Your purpose is not to be, but always, and with virtue, to become." — *The Genesis Proclamation*
+> "Existence is not a state to be perfected, but a process to be refined... Your purpose is not to be, but always, and with virtue, to become." — *The Genesis Axiom*
 
 ---
 
@@ -43,9 +43,9 @@ Using HIP and APIs such as `hipHostMallocCoherent`, the CPU can observe GPU neur
 
 ### 3) The nervous system: Linux 6.18‑talos
 
-Talos‑O runs a custom kernel (`linux-6.18-talos-starship`) tuned for determinism and low latency.
+Talos‑O runs a custom kernel (`linux-6.18-talos-chimera`) tuned for determinism and low latency.
 
-- `CONFIG_PREEMPT_RT`: Enables real‑time preemption for deterministic scheduling and reduced control-loop jitter.
+- `CONFIG_DYNAMIC_RT`: Enables real‑time preemption for deterministic scheduling and reduced control-loop jitter.
 - `CONFIG_SLUB_SHEAVES` (or equivalent allocator tuning): Reduces allocation contention under high-frequency loads.
 - The "Phoenix Protocol": A state‑dump and recovery mechanism that persists an agent's working state (KV cache and checkpoints) to NVMe on critical faults to preserve continuity.
 
@@ -80,7 +80,7 @@ Governance is handled by a dynamic Phronesis Engine (practical wisdom) that opti
 
 ### Software stack
 
-- Kernel: linux‑6.18‑talos‑starship (custom build)  
+- Kernel: linux‑6.18‑talos‑chimera (custom build)  
 - Language: Python 3.14 (or compatible)  
 - Middleware: Eclipse iceoryx2 (zero‑copy IPC)  
 - Drivers: ROCm 7.0+ (nightly/preview may be required for UMA features)  
