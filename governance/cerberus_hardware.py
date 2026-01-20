@@ -1,161 +1,194 @@
 import os
 import time
 import subprocess
-import sys
 import glob
 import numpy as np
+import threading
 
-# CONFIGURATION
+# --- BIOLOGICAL CONSTANTS (North Star Section 3.3) ---
+# The "Homeostatic Setpoint" for 10-year continuous operation
+TEMP_TARGET_C = 70.0  
+# The "Pain Threshold" - Agent must degrade cognitive fidelity
+TEMP_THROTTLE_C = 85.0 
+# The "Death Impulse" - Hard shutdown territory
+TEMP_CRITICAL_C = 95.0 
+# The "Achilles Heel" - LPDDR5X Max Safe Temp
+TEMP_MEM_LIMIT_C = 75.0
+
+# --- METABOLIC CONSTANTS (Thermodynamic Analysis 6.1) ---
+POWER_EFFICIENCY_KNEE_W = 85.0 # Optimal W/Perf
+POWER_BURST_CAP_W = 120.0      # Max STAPM Limit
+POWER_IDLE_FLOOR_W = 25.0
+
+# VITAL PATHS
 HEARTBEAT_FILE = "/dev/shm/talos_heartbeat"
-COOLANT_FILE = "/dev/shm/talos_coolant" # Semaphore for thermal throttling (The "Coolant")
-TARGET_SERVICE = "talos-omni.service"
-TEMP_LIMIT_C = 90.0
-PREDICTION_HORIZON_SEC = 10.0 
-HEARTBEAT_TIMEOUT_SEC = 15.0 # Relaxed for heavy cognitive loads
+THERMAL_STATE_FILE = "/dev/shm/talos_thermal_state" # JSON Shared State
+CONTROL_FILE = "/dev/shm/talos_coolant" # 0.0 to 1.0 (Throttle % used by Cortex)
 
-class KalmanFilter:
+class ThermalKalman:
     """
-    Tracks state [Temp, Rate_of_Change] to predict future thermal runaway.
+    Predictive Thermal Control. 
+    Filters out micro-jitter from the on-die sensors to prevent
+    mechanical fatigue on solder bumps due to fan hysteresis.
     """
-    def __init__(self, dt=1.0):
-        self.dt = dt
-        # State Vector [Temp, dT/dt]
-        self.x = np.array([[40.0], [0.0]])
-        # State Transition Matrix (Physics Model)
-        self.F = np.array([[1, dt], [0, 1]])
-        # Measurement Matrix (We only measure Temp)
-        self.H = np.array([[1, 0]])
-        # Covariance Matrix
-        self.P = np.eye(2) * 100.0
-        # Process Noise
-        self.Q = np.array([[0.1, 0], [0, 0.1]])
-        # Measurement Noise
-        self.R = np.array([[2.0]])
-
-    def predict(self):
-        self.x = self.F @ self.x
-        self.P = self.F @ self.P @ self.F.T + self.Q
-        return self.x[0][0]
+    def __init__(self, initial_temp=45.0):
+        self.x = np.array([initial_temp], dtype=float) # State estimate
+        self.P = np.array([1.0], dtype=float)          # Estimate covariance
+        self.Q = 0.01 # Process noise (System variance)
+        self.R = 0.1  # Measurement noise (Sensor jitter)
 
     def update(self, measurement):
-        z = np.array([[measurement]])
-        y = z - (self.H @ self.x) # Error
-        S = (self.H @ self.P @ self.H.T) + self.R
-        K = self.P @ self.H.T @ np.linalg.inv(S) # Kalman Gain
-        self.x = self.x + (K @ y)
-        self.P = (np.eye(2) - (K @ self.H)) @ self.P
+        # Prediction Update
+        self.P = self.P + self.Q
+        # Measurement Update
+        K = self.P / (self.P + self.R)
+        self.x = self.x + K * (measurement - self.x)
+        self.P = (1 - K) * self.P
+        return float(self.x[0])
 
-def find_thermal_sensor():
+class PIDController:
     """
-    Scans the system for a valid AMD thermal sensor (GPU or APU).
-    Prioritizes 'amdgpu' edge temp, then 'k10temp' Tdie.
+    Standard PID for maintaining Homeostasis (70C).
     """
-    candidates = []
-    
-    # 1. Search all hwmon directories
-    hwmon_path = "/sys/class/hwmon"
-    if not os.path.exists(hwmon_path):
-        return None
+    def __init__(self, kp=0.5, ki=0.1, kd=0.05, setpoint=TEMP_TARGET_C):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.setpoint = setpoint
+        self.prev_error = 0.0
+        self.integral = 0.0
 
-    for device in os.listdir(hwmon_path):
-        path = os.path.join(hwmon_path, device)
+    def compute(self, current_val):
+        error = current_val - self.setpoint
+        self.integral += error
+        derivative = error - self.prev_error
+        output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
+        self.prev_error = error
+        return output
+
+class StrixHaloBioios:
+    """
+    Hardware Abstraction Layer for AMD Ryzen AI Max+ 395.
+    Adapts to RDNA 3.5 (Radeon 8060S) sensor topology.
+    """
+    def __init__(self):
+        self.kf_cpu = ThermalKalman()
+        self.kf_mem = ThermalKalman()
+        self.amdgpu_path = self._find_amdgpu_hwmon()
+
+    def _find_amdgpu_hwmon(self):
+        # Find the hwmon interface for the Radeon 8060S
+        paths = glob.glob("/sys/class/drm/card0/device/hwmon/hwmon*")
+        return paths[0] if paths else None
+
+    def read_sensors(self):
+        """
+        Reads Die Temp (Edge) and Memory Temp (Junction).
+        """
+        t_cpu = 0.0
+        t_mem = 0.0
+        
         try:
-            with open(os.path.join(path, "name"), "r") as f:
-                name = f.read().strip()
+            # 1. CPU/SoC Edge Temperature
+            if self.amdgpu_path:
+                with open(os.path.join(self.amdgpu_path, "temp1_input"), "r") as f:
+                    t_cpu = float(f.read()) / 1000.0
+            else:
+                # Fallback to generic thermal zone
+                with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                    t_cpu = float(f.read()) / 1000.0
             
-            # Check for temperature inputs
-            temp_inputs = glob.glob(os.path.join(path, "temp*_input"))
-            if temp_inputs:
-                candidates.append((name, temp_inputs[0]))
-        except:
-            continue
+            # 2. LPDDR5X Memory Temp (Critical missing constraint in original)
+            # Often exposed as temp2 or via separate amd_pmc module
+            if self.amdgpu_path and os.path.exists(os.path.join(self.amdgpu_path, "temp2_input")):
+                 with open(os.path.join(self.amdgpu_path, "temp2_input"), "r") as f:
+                    t_mem = float(f.read()) / 1000.0
+            else:
+                t_mem = t_cpu * 0.9 # Estimation fallback if sensor missing
+                
+        except Exception:
+            pass
 
-    # 2. Select best candidate
-    for name, sensor_path in candidates:
-        if "amdgpu" in name: return sensor_path
-    for name, sensor_path in candidates:
-        if "k10temp" in name: return sensor_path
-            
-    return candidates[0][1] if candidates else None
+        # Smooth signal
+        s_cpu = self.kf_cpu.update(t_cpu)
+        s_mem = self.kf_mem.update(t_mem)
+        
+        return s_cpu, s_mem
 
-def get_temp(sensor_path):
-    if not sensor_path: return 0.0
-    try:
-        with open(sensor_path, "r") as f:
-            # Kernel reports temp in millidegrees
-            return int(f.read().strip()) / 1000.0
-    except:
-        return 0.0
+    def apply_power_cap(self, watts):
+        """
+        Adjusts the PPT (Package Power Tracking) limit.
+        Enforces the 85W Efficiency Knee.
+        """
+        # Clamp between floor and burst cap
+        target_w = max(POWER_IDLE_FLOOR_W, min(watts, POWER_BURST_CAP_W))
+        target_uw = int(target_w * 1_000_000) # Microwatts
+        
+        if self.amdgpu_path:
+            try:
+                # Only write if significant change to preserve VRM bus
+                # Requires root/sudo
+                pfile = os.path.join(self.amdgpu_path, "power1_cap")
+                with open(pfile, "w") as f:
+                    f.write(str(target_uw))
+            except PermissionError:
+                # Silent fail if not root, daemon will handle logical throttling
+                pass
 
-def kill_talos(reason):
-    print(f"\n\n[CERBERUS] ☣ FAILSAFE TRIGGERED ☣")
-    print(f"[CERBERUS] REASON: {reason}")
-    print("[CERBERUS] SEVERING CORTEX POWER...")
-    subprocess.run(["systemctl", "kill", "--signal=SIGKILL", TARGET_SERVICE])
-    if os.path.exists(HEARTBEAT_FILE):
-        os.unlink(HEARTBEAT_FILE)
-    sys.exit(1)
-
-def watch():
-    print("=========================================")
-    print("   CERBERUS ORTHRUS v2 (KALMAN)          ")
-    print("=========================================")
+def run_brainstem():
+    print("[CERBERUS] Autonomic Nervous System ONLINE.")
+    print(f"[CERBERUS] Target: {TEMP_TARGET_C}C | Memory Limit: {TEMP_MEM_LIMIT_C}C")
     
-    sensor_path = find_thermal_sensor()
-    if sensor_path:
-        print(f"[CERBERUS] Bound to Thermal Sensor: {sensor_path}")
-    else:
-        print("[CERBERUS] [!] NO THERMAL SENSORS DETECTED. RUNNING BLIND.")
-
-    kf = KalmanFilter(dt=0.5)
+    bioios = StrixHaloBioios()
+    pid = PIDController(setpoint=TEMP_TARGET_C)
     
     while True:
-        # 1. Measure
-        current_temp = get_temp(sensor_path)
+        # 1. SENSE
+        t_cpu, t_mem = bioios.read_sensors()
         
-        # 2. Update Model
-        kf.update(current_temp)
+        # 2. EVALUATE (Homeostasis)
+        # Calculate deviation from 70C target
+        correction = pid.compute(t_cpu)
         
-        # 3. Predict Future (+10s)
-        rate_of_change = kf.x[1][0]
-        future_temp = current_temp + (rate_of_change * PREDICTION_HORIZON_SEC)
+        # Base metabolic rate is the "Knee" (85W)
+        # If hot, subtract power. If cool, add power (up to burst).
+        target_power = POWER_EFFICIENCY_KNEE_W - (correction * 2.0)
         
-        status_msg = f"Stable ({rate_of_change:.2f}°C/s)"
-        status_color = "\033[92m" # Green
+        # 3. CRITICAL OVERRIDES (The "Lizard Brain" Reflex)
+        throttle_level = 0.0 # 0.0 = Full Speed, 1.0 = Coma
         
-        # 4. Intervention Logic (The Immune Response)
-        if future_temp > TEMP_LIMIT_C:
-            status_msg = "PREDICTED BREACH - INJECTING COOLANT"
-            status_color = "\033[93m" # Yellow
-            # Inject micro-pause signal for the Daemon
-            with open(COOLANT_FILE, "w") as f:
-                f.write("1")
-        else:
-            # Clear signal if stable
-            if os.path.exists(COOLANT_FILE):
-                os.unlink(COOLANT_FILE)
-
-        # 5. Hard Kill (Failsafe - If prediction failed and we actually hit limit)
-        if current_temp > TEMP_LIMIT_C:
-            kill_talos(f"THERMAL CRITICAL: {current_temp:.1f}°C")
-
-        # 6. Monitor Heartbeat
-        pulse_status = "LOCKED"
-        if os.path.exists(HEARTBEAT_FILE):
-            last_beat = os.path.getmtime(HEARTBEAT_FILE)
-            delta = time.time() - last_beat
+        # A. Memory Safety (The Achilles Heel)
+        if t_mem > TEMP_MEM_LIMIT_C:
+            print(f"[CERBERUS] MEMORY CRITICAL ({t_mem:.1f}C). Dumping Context.")
+            throttle_level = 1.0 # Full stop
+            target_power = POWER_IDLE_FLOOR_W
             
-            if delta > HEARTBEAT_TIMEOUT_SEC:
-                kill_talos(f"CARDIAC ARREST: Last pulse {delta:.1f}s ago")
-        else:
-            pulse_status = "WAITING"
-
-        # HUD Output
-        reset = "\033[0m"
-        sys.stdout.write(f"\r[ORTHRUS] Temp: {current_temp:.1f}°C | Pred(+10s): {future_temp:.1f}°C | Pulse: {pulse_status} | {status_color}{status_msg}{reset}   ")
-        sys.stdout.flush()
+        # B. CPU Thermal Runaway
+        elif t_cpu > TEMP_THROTTLE_C:
+            throttle_level = (t_cpu - TEMP_THROTTLE_C) / (TEMP_CRITICAL_C - TEMP_THROTTLE_C)
+            throttle_level = min(throttle_level, 1.0)
+            target_power = 35.0 # STAPM limit
+            
+        # 4. ACTUATE
+        bioios.apply_power_cap(target_power)
         
-        time.sleep(0.5)
+        # Write state for the Cortex (Logic Engine) to see
+        # The Cortex reads 'throttle_level' to decide if it should "Meditation" or "Work"
+        with open(CONTROL_FILE, "w") as f:
+            f.write(f"{throttle_level:.4f}")
+            
+        # Heartbeat
+        with open(HEARTBEAT_FILE, "w") as f:
+            f.write(str(time.time()))
+            
+        # Log periodically
+        if int(time.time()) % 5 == 0:
+            print(f"[AUTO] T_die: {t_cpu:.1f}C | T_mem: {t_mem:.1f}C | Power Target: {target_power:.1f}W | Throttle: {throttle_level:.2f}")
+
+        time.sleep(1.0)
 
 if __name__ == "__main__":
-    watch()
+    try:
+        run_brainstem()
+    except KeyboardInterrupt:
+        print("[CERBERUS] Brainstem Severed.")

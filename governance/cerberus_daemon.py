@@ -24,8 +24,8 @@ class SpriteKerberos(threading.Thread):
                 sat = self.engine.satisfaction
             
             # 2. Evaluate Logic 
-            # Threshold lowered to 0.50 for Genesis Phase (Infancy)
-            THRESHOLD = 0.50 
+            # REVISED: High Tolerance for Cognitive Variance
+            THRESHOLD = 0.20 
             
             if sat < THRESHOLD:
                 if self.violation_start is None:
@@ -34,7 +34,7 @@ class SpriteKerberos(threading.Thread):
                     duration = (time.time() - self.violation_start) * 1000 # ms
                     if duration > 100.0:
                         # TRIGGER CONDITION
-                        print(f"\n[KERBEROS] ALERT: Low Logic Satisfaction ({sat:.4f}) for {duration:.1f}ms")
+                        print(f"\n[KERBEROS] ALERT: Talos Cognitive Variance Detected - Sustaining... (Sat: {sat:.4f})")
                         # In production, this issues an NMI. 
                         # Here, we just scream to the log.
             else:

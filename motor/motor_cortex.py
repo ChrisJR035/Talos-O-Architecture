@@ -3,7 +3,7 @@ import subprocess
 import os
 import shutil
 
-# DEPENDENCY SAFEGUARD
+# 1. Search Engine Loading
 try:
     from ddgs import DDGS
 except ImportError:
@@ -11,17 +11,30 @@ except ImportError:
         from duckduckgo_search import DDGS
     except ImportError:
         DDGS = None
-        print("[MOTOR] CRITICAL: Web Search library missing.")
+        print("[MOTOR] WARNING: duckduckgo_search library missing. Install via pip.")
 
 class ToolBelt:
     def __init__(self):
         self.ddgs = None
+        self.container_engine = self._detect_engine()
+        
         if DDGS:
             try:
                 self.ddgs = DDGS()
-                print("[MOTOR] ToolBelt Initialized: [Web Search] [Code Sandbox] [Ouroboros I/O]")
-            except Exception as e:
-                print(f"[MOTOR] WARNING: Search module failed to load: {e}")
+            except:
+                pass
+        
+        status = []
+        if self.ddgs: status.append("Web")
+        if self.container_engine: status.append(f"Sandbox({self.container_engine})")
+        status.append("FileI/O")
+        
+        print(f"[MOTOR] ToolBelt Online: {', '.join(status)}")
+
+    def _detect_engine(self):
+        if shutil.which("podman"): return "podman"
+        if shutil.which("docker"): return "docker"
+        return None
 
     def search_web(self, query, max_results=3):
         if not self.ddgs: return "System Alert: Search offline."
@@ -32,59 +45,56 @@ class ToolBelt:
             summary = [f"Title: {r.get('title')}\nSnippet: {r.get('body')}\nSource: {r.get('href')}" for r in results]
             return "\n---\n".join(summary)
         except Exception as e:
-            return f"System Alert: Search Failure - {str(e)}"
+            return f"System Alert: Search Failed - {e}"
 
     def execute_code(self, code_snippet):
-        print("[MOTOR] Spinning up Sandbox for Code Execution...")
-        host_path = "/tmp/talos_exec.py"
-        try:
-            with open(host_path, "w") as f: f.write(code_snippet)
-        except IOError as e: return f"System Alert: Host Write Failure: {e}"
+        if not self.container_engine:
+            return "System Alert: No sandbox engine (Docker/Podman) found. Execution blocked."
             
+        print("[MOTOR] Executing Action: CODE (Sandbox)")
+        
+        # Write to shared memory for speed
+        with open("/tmp/talos_script.py", "w") as f:
+            f.write(code_snippet)
+            
+        # Execute in verified sandbox
         cmd = [
-            "docker", "run", "--rm", 
-            "-v", f"{host_path}:/home/talos/script.py",
+            self.container_engine, "run", "--rm",
             "--network", "none",
-            "talos-sandbox", "python3", "script.py"
+            "--memory", "512m",
+            "-v", "/tmp/talos_script.py:/home/talos/script.py:ro",
+            "talos-sandbox", "python3", "/home/talos/script.py"
         ]
+        
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             output = result.stdout + "\n" + result.stderr
             return output.strip() if output.strip() else "Code executed (No Output)."
         except subprocess.TimeoutExpired: return "System Alert: Execution Timed Out."
-        except FileNotFoundError: return "System Alert: Container engine not found."
         except Exception as e: return f"System Alert: Sandbox Failure - {e}"
 
     def read_file(self, file_path):
         base_path = os.path.expanduser("~/talos-o/")
         abs_path = os.path.abspath(os.path.expanduser(file_path))
-        if not abs_path.startswith(base_path): return "ACCESS DENIED."
+        
+        if not abs_path.startswith(base_path): return "ACCESS DENIED. Stay in ~/talos-o/"
         if not os.path.exists(abs_path): return "File not found."
+        
         try:
             with open(abs_path, "r") as f: return f.read()
         except Exception as e: return f"Read Error: {e}"
 
     def overwrite_file(self, file_path, content):
-        """
-        OUROBOROS WRITER.
-        Writes content to a file on the host system.
-        """
         base_path = os.path.expanduser("~/talos-o/")
         abs_path = os.path.abspath(os.path.expanduser(file_path))
         
-        # Security: Jail to project root
         if not abs_path.startswith(base_path):
             return "System Alert: ACCESS DENIED. Write restricted to ~/talos-o/"
             
         print(f"[MOTOR] OUROBOROS EVENT: Rewriting {os.path.basename(abs_path)}...")
         try:
-            # 1. Create Backup
-            if os.path.exists(abs_path):
-                shutil.copy2(abs_path, abs_path + ".bak")
-            
-            # 2. Write New Content
-            with open(abs_path, "w") as f:
-                f.write(content)
-            return f"Success. File updated. Backup saved to {os.path.basename(abs_path)}.bak"
-        except Exception as e:
-            return f"System Alert: Write Error - {e}"
+            # Backup first!
+            if os.path.exists(abs_path): shutil.copy2(abs_path, abs_path + ".bak")
+            with open(abs_path, "w") as f: f.write(content)
+            return "Success: File updated. Backup created."
+        except Exception as e: return f"Write Error: {e}"

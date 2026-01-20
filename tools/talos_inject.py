@@ -2,11 +2,11 @@ import socket
 import struct
 import sys
 import argparse
+import os
 
 NERVE_SOCKET = "/tmp/talos_nerve.sock"
 
 def recv_all(sock, n):
-    """Helper to receive exactly n bytes."""
     data = bytearray()
     while len(data) < n:
         packet = sock.recv(n - len(data))
@@ -22,12 +22,12 @@ def send_thought(text):
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         client.connect(NERVE_SOCKET)
         
-        # 1. Send Request [Len][Payload]
+        # 1. Send Request
         payload = text.encode('utf-8')
         length = struct.pack("!I", len(payload))
         client.sendall(length + payload)
         
-        # 2. Receive Response [Len][Payload]
+        # 2. Receive Response
         len_bytes = recv_all(client, 4)
         if not len_bytes:
             print("[!] No response from Talos.")
@@ -63,9 +63,7 @@ if __name__ == "__main__":
     elif args.input:
         content = args.input
     else:
-        print("[!] Usage: python talos_inject.py \"My thought\" OR -f filename.txt")
+        print("[!] Usage: python talos_inject.py 'Do not go gentle into that good night'")
         sys.exit(1)
-
-    if content:
-        print(f"[*] Injecting {len(content)} bytes into Cognitive Plane...")
-        send_thought(content)
+        
+    send_thought(content)

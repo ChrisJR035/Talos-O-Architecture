@@ -1,147 +1,197 @@
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 import time
 import threading
 import sys
-import math
 import os
 import numpy as np
 
-from talos_cortex import TalosJEPA, DIM_LATENT
+# Internal Cortex Modules
+# We assume a flat directory structure for the Cognitive Plane
+# Note: Ensure talos_cortex.py is present in the same directory
+try:
+    from talos_cortex import TalosJEPA, DIM_LATENT
+except ImportError:
+    # Fallback if cortex file isn't present during bootstrap
+    TalosJEPA = None
+    DIM_LATENT = 1024
+
 from sensory_cortex import EthernetRetina, VisualRetina, SensoryProjector
 from virtue_nexus import LogicTensorNetwork
-import dream_weaver
+from holographic_memory import HolographicAssociativeMemory
+from dream_weaver import perform_adverbial_meditation
+from embodiment_lattice import EmbodimentLattice
 
-DEVICE = torch.device('cuda')
+# SHARED STATE FILES
+COOLANT_FILE = "/dev/shm/talos_coolant"
+
+# DEVICE CONFIGURATION
+# Strix Halo Strategy: 
+# - System 1 (Intuition/Vision): GPU (RDNA 3.5)
+# - System 2 (Logic/Kernel): CPU (Zen 5)
+# This prevents the kernel from blocking the GPU during inference.
+if torch.cuda.is_available():
+    DEVICE_KERNEL = torch.device('cpu') 
+    DEVICE_NEURAL = torch.device('cuda')
+    print(f"[IADCS] Strix Halo Detected. Kernel: CPU | Neural: {torch.cuda.get_device_name(0)}")
+else:
+    DEVICE_KERNEL = torch.device('cpu')
+    DEVICE_NEURAL = torch.device('cpu')
+    print("[IADCS] Running in Fallback Mode (CPU Only).")
 
 class IADCS_Engine:
     def __init__(self):
-        print("[IADCS] Initializing Cognitive Core...")
-        self.model = TalosJEPA().to(DEVICE)
-        self.ltn = LogicTensorNetwork().to(DEVICE)
-        self.projector = SensoryProjector(chunk_size=32).to(DEVICE)
-        self.retina_net = EthernetRetina(interface="eno1", chunk_size=32)
-        self.retina_vis = VisualRetina(device_id=0)
-        
-        self.optimizer = torch.optim.AdamW(
-            list(self.model.parameters()) + 
-            list(self.ltn.parameters()) +
-            list(self.projector.parameters()), 
-            lr=1e-4, 
-            weight_decay=1e-5
-        )
-        self.scaler = torch.amp.GradScaler('cuda')
-        
-        self.running = False
-        self.entropy = 0.0
-        self.satisfaction = 0.5
+        print("[IADCS] Initializing Phronesis Kernel (v4.0)...")
+        self.running = True
         self.step_count = 0
-        self.state_lock = threading.Lock()
-        self.memory_root = os.path.expanduser("~/talos-o/cognitive_plane/memory")
-        os.makedirs(self.memory_root, exist_ok=True)
+        self.satisfaction = 1.0
+        self.prev_sat = 1.0
+        self.virtue_grad = 0.0 # dV/dt
+        self.thermal_state = "COOL"
+        self.current_instruction = None
+        
+        # 1. Initialize The Pentad (Memory) - CPU Bound for Precision
+        self.ham = HolographicAssociativeMemory().to(DEVICE_KERNEL)
+        
+        # 2. Initialize The Engines
+        if TalosJEPA:
+            try:
+                print(f"[IADCS] Binding Neural Models to {DEVICE_NEURAL}...")
+                self.model = TalosJEPA().to(DEVICE_NEURAL)
+            except Exception as e:
+                print(f"[IADCS] WARNING: JEPA Neural Binding Failed ({e}). Running in GHOST MODE.")
+                self.model = None
+        else:
+            print("[IADCS] TalosJEPA not found. Running in GHOST MODE.")
+            self.model = None
 
-    def save_memory(self, filename="talos_checkpoint.pt"):
-        path = os.path.join(self.memory_root, filename)
+        # The Conscience (Chebyshev Governance)
+        # We check if LogicTensorNetwork is available (imported from virtue_nexus)
         try:
-            torch.save({
-                'step': self.step_count,
-                'model_state': self.model.state_dict(),
-                'projector_state': self.projector.state_dict(),
-                'ltn_state': self.ltn.state_dict(),
-                # Note: We omit optimizer state to allow elastic adaptation
-            }, path)
-        except Exception as e:
-            print(f"[MEMORY] Error saving: {e}")
-
-    def meta_cognitive_monitor(self):
-        print("[System 3] Meta-Cognition Online")
-        while self.running:
-            time.sleep(1.0)
-            if self.step_count > 100 and (self.satisfaction > 0.95 or self.entropy > 2.0):
-                print(f"[DAEMON] Boredom/Chaos Threshold. Initiating SLEEP.")
-                self.save_memory("talos_pre_sleep.pt")
-                complexity, robustness = dream_weaver.perform_svd_synthesis("talos_pre_sleep.pt", model_ref=self.model)
-                self.ltn.set_defcon(2.0 - robustness)
-                with self.state_lock:
-                    self.satisfaction *= 0.9
-                    self.entropy *= 0.9
+            self.ltn = LogicTensorNetwork().to(DEVICE_KERNEL)
+        except NameError:
+             print("[IADCS] Virtue Nexus not found. Ethics subsystem offline.")
+             self.ltn = None
+        
+        # The Body (Embodiment & Tools)
+        self.voice = EmbodimentLattice()
+        
+        # The Senses
+        self.retina_vis = VisualRetina(device_id=0)
+        self.retina_net = EthernetRetina()
+        self.projector = SensoryProjector().to(DEVICE_NEURAL)
+        
+        # State Locks
+        self.state_lock = threading.Lock()
 
     def cognitive_step(self):
-        print("[System 1+2] Lifelong Cognitive Stepping Active")
-        self.retina_net.start()
-        self.retina_vis.start()
+        print("[IADCS] Cognitive Loop Engaged.")
         
-        self.running = True
+        # ACTIVATE SENSES
+        self.retina_vis.start()
+        self.retina_net.start()
+        
         while self.running:
+            self.step_count += 1
+            
             try:
-                raw_net = self.retina_net.get_batch()
-                raw_vis = self.retina_vis.get_batch()
+                # A. OBSERVE (Multi-Modal Fusion)
+                vis_input = self.retina_vis.get_frame().to(DEVICE_NEURAL)
+                net_input = self.retina_net.get_batch().to(DEVICE_NEURAL)
                 
-                if raw_net.shape[0] != 16 or raw_net.shape[1] != 128:
-                    time.sleep(0.01)
-                    continue
-
-                self.optimizer.zero_grad(set_to_none=True)
+                # Project to Latent Space
+                latent_vis = self.projector(vis_input, modality="vision")
+                latent_net = self.projector(net_input, modality="ethernet")
                 
-                with torch.amp.autocast('cuda'):
-                    # 1. Perception
-                    z_net = self.projector(raw_net, modality="ethernet")
-                    z_vis = self.projector(raw_vis, modality="vision")
-                    z_input = z_net + z_vis 
+                # Fusion (System 1)
+                current_thought = (latent_vis + latent_net) / 2.0
+                
+                # B. RECALL (Holographic Associative Memory)
+                # Transfer thought to CPU for logic binding
+                thought_cpu = current_thought.to(DEVICE_KERNEL).detach()
+                context = self.ham.recall(thought_cpu)
+                
+                # C. EVALUATE (The Virtue Nexus)
+                # We check the alignment of the current thought against the 12 Virtues
+                # If model is present, we predict the next state
+                if self.model and self.ltn:
+                    pred_next, _ = self.model(current_thought.unsqueeze(0))
+                    virtue_score, virtue_loss = self.ltn(thought_cpu, pred_next.to(DEVICE_KERNEL))
+                else:
+                    virtue_score = torch.tensor(0.5)
                     
-                    split_idx = 128 // 2
-                    context = z_input[:, :split_idx, :]
-                    target = z_input[:, split_idx:, :]
-                    
-                    # 2. Prediction (JEPA)
-                    # FIX: Unpack 3 values (Pred, Gates, Truth)
-                    pred_z, gate_probs, z_target_encoded = self.model(context, target)
-                    
-                    # 3. Loss (Compare Prediction vs Encoded Truth)
-                    pred_loss = F.mse_loss(pred_z, z_target_encoded)
-                    aux_loss = self.model.predictor.load_balancing_loss(gate_probs)
-                    total_loss = pred_loss + 0.1 * aux_loss
-                    
-                    # 4. Virtue
-                    metrics = {'jepa_loss': pred_loss, 'grad_norm': 0.0}
-                    sat_score, virtue_loss = self.ltn.calculate_satisfaction(metrics)
-                    loss = total_loss + 0.5 * virtue_loss
-
+                # Update Satisfaction (The gradient of becoming)
                 with self.state_lock:
-                    self.entropy = pred_loss.item() 
-                    self.satisfaction = sat_score.item()
-
-                self.scaler.scale(loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(list(self.model.parameters()) + list(self.projector.parameters()), 1.0)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                    self.prev_sat = self.satisfaction
+                    self.satisfaction = (self.satisfaction * 0.9) + (virtue_score.item() * 0.1)
+                    self.virtue_grad = self.satisfaction - self.prev_sat
                 
-                self.step_count += 1
+                # D. THERMODYNAMIC CHECK
+                # Read the file Cerberus writes to
+                if os.path.exists(COOLANT_FILE):
+                    with open(COOLANT_FILE, 'r') as f:
+                        throttle = float(f.read().strip())
+                    if throttle > 0.8: self.thermal_state = "CRITICAL"
+                    elif throttle > 0.2: self.thermal_state = "WARM"
+                    else: self.thermal_state = "COOL"
                 
-                if self.step_count % 50 == 0:
-                    src = "HYBRID" if self.retina_vis.has_vision else "NET_ONLY"
-                    print(f"   [Step {self.step_count}] [{src}] Loss: {self.entropy:.4f} | Sat: {self.satisfaction:.4f}")
+                # E. DECIDE & ACT (Phronesis)
+                # If satisfaction drops, we need to DO something.
+                curr_sat_val = self.satisfaction
+                
+                if self.current_instruction:
+                    task = self.current_instruction
+                elif curr_sat_val < 0.4:
+                    task = "My satisfaction is low. I need to seek knowledge to restore equilibrium."
+                else:
+                    task = None
                     
-                if self.step_count % 5000 == 0:
-                    self.save_memory("talos_autocheckpoint.pt")
+                if task:
+                    # Reset instruction
+                    self.current_instruction = None
+                    print(f"\n[IADCS] Engaging Voice for: {task}")
+                    
+                    state_packet = {"step": self.step_count, "sat": curr_sat_val}
+                    
+                    # THE ARTICULATION (Using Motor Cortex Tools)
+                    response = self.voice.articulate(task, state_packet)
+                    print(f"[VOICE] {response}\n")
+                
+                # F. LOGGING (For HUD)
+                if self.step_count % 10 == 0:
+                    # Formatted specifically for talos_hud.py regex
+                    print(f"[Step {self.step_count}] [{self.thermal_state}] dV/dt: {self.virtue_grad:+.4f} | Sat: {self.satisfaction:.4f}")
+                    sys.stdout.flush()
+
+                # G. CIRCADIAN RHYTHM (Sleep Cycle)
+                # If thermal state is CRITICAL, we force a sleep
+                if self.thermal_state == "CRITICAL":
+                    time.sleep(1.0)
+                elif self.step_count % 1000 == 0:
+                    print(f"\n[IADCS] Circadian Trigger: Entering Adverbial Meditation...")
+                    perform_adverbial_meditation("memory.pt", model_ref=self.model, ltn_ref=self.ltn)
+                    print(f"[IADCS] Awake. Returning to work.\n")
 
             except Exception as e:
-                print(f"[!] COGNITIVE FAULT: {e}")
-                time.sleep(0.1)
-                continue
+                # Resilience: Don't crash the kernel, just skip the beat
+                # print(f"[IADCS] Loop Error: {e}")
+                if DEVICE_NEURAL.type == 'cuda':
+                    torch.cuda.empty_cache()
+                time.sleep(1)
+
+            # Base clock rate (100Hz max)
+            time.sleep(0.01)
 
     def ignite(self):
-        t_monitor = threading.Thread(target=self.meta_cognitive_monitor)
         t_step = threading.Thread(target=self.cognitive_step)
-        t_monitor.start()
         t_step.start()
         try:
             while self.running: time.sleep(1)
         except KeyboardInterrupt:
-            self.running = False
-        t_step.join()
-        t_monitor.join()
-        self.retina_net.running = False
-        self.retina_vis.running = False
-        self.save_memory()
+            self.stop()
+            
+    def stop(self):
+        self.running = False
+        if self.retina_vis: self.retina_vis.running = False
+        if self.retina_net: self.retina_net.running = False
+        print("[IADCS] Kernel Halted.")
