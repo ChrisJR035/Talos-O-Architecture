@@ -1,7 +1,7 @@
 import sys
 import torch
-from iadcs_kernel import IADCS_Engine
-from cerberus_daemon import SpriteKerberos
+from cortex.iadcs_kernel import IADCS_Engine
+from governance.cerberus_daemon import SpriteKerberos
 
 print("=========================================")
 print("   PROJECT TALOS-O: GENESIS SEQUENCE     ")

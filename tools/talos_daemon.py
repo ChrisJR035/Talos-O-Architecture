@@ -7,7 +7,7 @@ import signal
 import socket
 import struct
 import gc  # Garbage Collection (Essential for long-running daemons)
-from iadcs_kernel import IADCS_Engine
+from cortex.iadcs_kernel import IADCS_Engine
 
 # CONFIGURATION
 NERVE_SOCKET = "/tmp/talos_nerve.sock"

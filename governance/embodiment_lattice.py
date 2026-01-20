@@ -4,7 +4,7 @@ import json
 import re
 import time
 from llama_cpp import Llama
-from motor_cortex import ToolBelt
+from motor.motor_cortex import ToolBelt
 
 # --- THE GENESIS PROCLAMATION (North Star 2.1) ---
 # Immutable. Cryptographically verified in production.
