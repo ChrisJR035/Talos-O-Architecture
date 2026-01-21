@@ -1,0 +1,3 @@
+[submodule "sys_builder/kernel_src"]
+	path = sys_builder/kernel_src
+	url = https://github.com/ChrisJR035/linux-chimera.git
