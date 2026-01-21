@@ -1,0 +1,24 @@
+# --- Talos-O Exclusion Zone ---
+
+# 1. Heavy Neural Weights (Download these manually, don't push them)
+*.gguf
+*.bin
+*.pth
+
+# 2. Dynamic Memory (The checkpoints change constantly)
+cognitive_plane/memory/*.pt
+*.pt
+
+# 3. Python Cache
+__pycache__/
+*.pyc
+
+# 4. Build Artifacts (The slag from the forge)
+sys_builder/kernel_build/
+sys_builder/vision/build/
+sys_builder/vision/dist/
+*.egg-info/
+
+# 5. Virtual Environments
+venv/
+.env
