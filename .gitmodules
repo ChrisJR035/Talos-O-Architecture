@@ -1,0 +1,6 @@
+[submodule "sys_builder/kernel/src"]
+	path = sys_builder/kernel/src
+	url = https://github.com/ChrisJR035/linux-chimera.git
+[submodule "sys_builder/drivers/src"]
+	path = sys_builder/drivers/src
+	url = https://github.com/ChrisJR035/TheRock.git
