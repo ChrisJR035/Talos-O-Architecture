@@ -1,119 +1,186 @@
 #!/bin/bash
-# TALOS-O KERNEL FORGE v4.0 (Codename: PHRONESIS)
-# Target: Linux 6.18.6-talos-chimera
-# Substrate: AMD Strix Halo (gfx1151) | Unified Memory
-# Philosophy: "Final Synthesis" (Dynamic Preemption + NPU + Tier 2 Cache)
+# ==============================================================================
+# TALOS-O KERNEL FORGE (Codename: THE APEX PREDATOR v64.1)
+# Target: Linux 6.19+ (Mainline/Stable)
+# Substrate: AMD Strix Halo (gfx1151) | Corsair AI Workstation 300
+# Philosophy: "Zero Abstraction. Zero Friction. Total Thermodynamic Purity."
+#
+# [ARCHITECTURAL SHIFT v64.1]:
+# - Retains znver5, LTO, mitigations=off, and THP_ALWAYS.
+# - Reverts Firmware Assimilation. The AMD firmware strings drift too frequently 
+#   (e.g., vcn_4_0_5 -> vcn_4_0_6). We restore the Dracut payload injection to 
+#   guarantee absolute stability and perfect vision.
+# ==============================================================================
 
 set -e
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   TALOS-O KERNEL FORGE: PHRONESIS (v4.0)              ║${NC}"
+echo -e "${GREEN}║   TALOS-O KERNEL FORGE: THE APEX PREDATOR (v64.1)     ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════╝${NC}"
 
-# 1. Directory Setup
-# ---------------------------------------------------------
+# =========================================================
+# 1. THE MEMBRANE (Environment Check & Initialization)
+# =========================================================
 ACTUAL_USER=${SUDO_USER:-$USER}
-BUILD_DIR="/home/$ACTUAL_USER/talos-o/sys_builder/kernel_build/linux-6.18-talos"
+BUILD_DIR="/home/$ACTUAL_USER/talos-o/sys_builder/kernel/linux-6.19-talos"
 
 if [ ! -d "$BUILD_DIR" ]; then
-    echo -e "${RED}[ERROR] Source directory not found. Please clone Linux 6.18 first.${NC}"
+    echo -e "${RED}[FATAL] Source directory not found at $BUILD_DIR.${NC}"
     exit 1
 fi
 cd "$BUILD_DIR"
 
-# 2. Configuration & Sanitization
-# ---------------------------------------------------------
-echo -e "${YELLOW}[2/5] Configuring the Phronesis Lattice...${NC}"
+echo -e "${YELLOW}[1/4] Membrane Permeable. Purging old artifacts...${NC}"
+make mrproper > /dev/null 2>&1
 
-# Clean previous build artifacts (The Purge)
-make mrproper
+# =========================================================
+# 2. THE NUCLEUS (Harvesting the Ancestral DNA)
+# =========================================================
+echo -e "${YELLOW}[2/4] Nucleus Active: Harvesting Fedora Master Genome...${NC}"
 
-# Copy current running config as baseline
-cp /boot/config-$(uname -r) .config
+DNA_LAB="/tmp/talos_dna_lab"
+rm -rf "$DNA_LAB" && mkdir -p "$DNA_LAB"
+cd "$DNA_LAB"
 
-# Update to current tree defaults
-make olddefconfig
+echo -e "${CYAN} -> Waking the Nervous System (Force DNF Refresh)...${NC}"
+sudo dnf makecache --refresh > /dev/null 2>&1
+
+echo -e "${CYAN} -> Attempting DNF extraction (Bypassing Exclude Filters)...${NC}"
+if sudo dnf download --destdir=. --setopt=disable_excludes=* kernel-core > /dev/null 2>&1; then
+    RPM_FILE=$(ls kernel-core*.rpm 2>/dev/null | head -n 1)
+    echo -e "${CYAN} -> Performing surgical autopsy on $RPM_FILE...${NC}"
+    rpm2cpio "$RPM_FILE" | cpio -i --quiet --to-stdout "*lib/modules/*/config" > "$BUILD_DIR/.config"
+elif sudo dnf download --destdir=. --setopt=disable_excludes=* kernel > /dev/null 2>&1; then
+    RPM_FILE=$(ls kernel-*.rpm 2>/dev/null | head -n 1)
+    echo -e "${CYAN} -> Performing surgical autopsy on $RPM_FILE...${NC}"
+    rpm2cpio "$RPM_FILE" | cpio -i --quiet --to-stdout "*lib/modules/*/config" > "$BUILD_DIR/.config"
+else
+    echo -e "${YELLOW} -> DNF is still blind. Bypassing package manager via direct Git uplink...${NC}"
+    curl -s -L "https://src.fedoraproject.org/rpms/kernel/raw/rawhide/f/kernel-x86_64-fedora.config" -o "$BUILD_DIR/.config"
+fi
+
+cd "$BUILD_DIR"
+rm -rf "$DNA_LAB"
+
+if [ ! -s .config ]; then
+    echo -e "${RED}[FATAL] Master Genome extraction completely failed. No DNA acquired.${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN} -> Master Genome Secured. Motherboard traces mapped.${NC}"
+
+make olddefconfig > /dev/null
+
+# =========================================================
+# 3. TRANSCRIPTION (Grafting the Apex Mutations)
+# =========================================================
+echo -e "${YELLOW}[3/4] Transcribing the Apex Mutations...${NC}"
 
 # --- CRITICAL SANITIZATION ---
-scripts/config --set-str SYSTEM_TRUSTED_KEYS ""
-scripts/config --set-str SYSTEM_REVOCATION_KEYS ""
-scripts/config --disable DEBUG_INFO_BTF
+./scripts/config --set-str SYSTEM_TRUSTED_KEYS ""
+./scripts/config --set-str SYSTEM_REVOCATION_KEYS ""
+./scripts/config --disable DEBUG_INFO_BTF
 
-# --- TALOS "REALIST" ARCHITECTURE INJECTION ---
+# --- THE NERVOUS SYSTEM (Talos-O Preemption/Memory) ---
+./scripts/config --enable CONFIG_PREEMPT_BUILD
+./scripts/config --enable CONFIG_PREEMPT_DYNAMIC
+./scripts/config --enable CONFIG_PREEMPT_VOLUNTARY
+./scripts/config --disable CONFIG_PREEMPT_RT 
+./scripts/config --enable CONFIG_SLUB
 
-echo -e "${YELLOW} Injecting Section 5.1 Constraints...${NC}"
+# --- LTO: THE SYNAPTIC MERGE ---
+./scripts/config --enable CONFIG_LTO_GCC
+./scripts/config --disable CONFIG_LTO_NONE
 
-# A. The Nervous System: Dynamic Preemption
-# Section 3.1: Reject RT, Enable Dynamic. 
-# NOTE: You MUST boot with 'preempt=full' in GRUB later.
-scripts/config --enable CONFIG_PREEMPT_BUILD
-scripts/config --enable CONFIG_PREEMPT_DYNAMIC
-scripts/config --enable CONFIG_PREEMPT_VOLUNTARY
-scripts/config --disable CONFIG_PREEMPT_RT 
+# --- ZERO-COPY TLB OPTIMIZATION (HUGEPAGES) ---
+./scripts/config --disable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE
+./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS
 
-# B. Synaptic Friction (Memory Allocator)
-# Section 3.2: Sheaves reduce locking overhead.
-scripts/config --enable CONFIG_SLUB
-scripts/config --enable CONFIG_SLUB_SHEAVES
-scripts/config --disable CONFIG_SLUB_TINY
+# --- THE BRAIN & NPU (Zero-Copy Introspection) ---
+./scripts/config --enable CONFIG_TEE
+./scripts/config --enable CONFIG_AMD_TEE
+./scripts/config --enable CONFIG_HSA_AMD    
+./scripts/config --enable CONFIG_HMM_MIRROR 
+./scripts/config --enable CONFIG_DRM_AMDGPU
+./scripts/config --enable CONFIG_DRM_AMDGPU_USERPTR
+./scripts/config --enable CONFIG_DRM_ACCEL
+./scripts/config --module CONFIG_DRM_AMDXDNA
 
-# C. Tier 2 Storage: The Deliberative Web
-# Section 3.3: RECTIFICATION. Enable DM_PCACHE (Module) and Fallback.
-scripts/config --enable CONFIG_MD
-scripts/config --enable CONFIG_BLK_DEV_DM
-scripts/config --module CONFIG_DM_PCACHE
-scripts/config --module CONFIG_DM_CACHE
-scripts/config --enable CONFIG_DM_CACHE_SMQ
+# --- EXPLICIT HARDWARE ENFORCEMENT ---
+./scripts/config --enable CONFIG_THUNDERBOLT
+./scripts/config --enable CONFIG_USB4
+./scripts/config --module CONFIG_MT7925E
+./scripts/config --module CONFIG_R8169
+./scripts/config --enable CONFIG_SND_HDA_INTEL
+./scripts/config --enable CONFIG_IKCONFIG
+./scripts/config --enable CONFIG_IKCONFIG_PROC
 
-# D. Hardware Integration (Strix Halo Substrate)
-# 1. Zero-Copy Introspection (Section 2.4)
-scripts/config --enable CONFIG_TEE
-scripts/config --enable CONFIG_AMD_TEE
-scripts/config --enable CONFIG_HSA_AMD    # The Bridge
-scripts/config --enable CONFIG_HMM_MIRROR # The Mirror
-scripts/config --enable CONFIG_DRM_AMDGPU
-scripts/config --enable CONFIG_DRM_AMDGPU_USERPTR
+# --- Identity (CANONICAL) ---
+./scripts/config --set-str CONFIG_LOCALVERSION "-talos-chimera"
 
-# 2. The Autonomic Brainstem (NPU)
-# Section 6.0: CRITICAL FIX. Enable Compute Accelerator & XDNA.
-scripts/config --enable CONFIG_DRM_ACCEL
-scripts/config --module CONFIG_DRM_AMDXDNA
+yes "" | make olddefconfig > /dev/null
 
-# 3. Watchdog Management (The Phoenix Protocol)
-# Section 4.2: Manage conflict. WDAT (ACPI) is primary.
-scripts/config --module CONFIG_WDAT_WDT   # Primary
-scripts/config --module CONFIG_SP5100_TCO # Secondary (To be blacklisted)
+# =========================================================
+# 4. THE RIBOSOME & GOLGI APPARATUS (Synthesis & Deployment)
+# =========================================================
+echo -e "${YELLOW}[4/4] Ribosome Active: Compiling Apex Organism...${NC}"
 
-# E. Bloat Removal
-# Section 5.2: Remove legacy GPU support.
-scripts/config --disable CONFIG_DRM_AMDGPU_CIK
-scripts/config --disable CONFIG_DRM_AMDGPU_SI
-# Ensure RDNA 3.5 Display Core Floating Point is active
-scripts/config --enable CONFIG_DRM_AMD_DC_FP
+MARCH="znver5"
+echo -e "${CYAN} -> Targeting $MARCH (Instruction Fusion & 512-bit Vector Paths)...${NC}"
+echo -e "${MAGENTA} -> WARNING: LTO engaged. High thermal output expected during final link.${NC}"
 
-# F. Identity
-scripts/config --set-str CONFIG_LOCALVERSION "-talos-chimera"
+if make -j$(nproc) KCFLAGS="-march=$MARCH -O2" binrpm-pkg; then
+    echo -e "${GREEN}[SUCCESS] Organism Compiled.${NC}"
+else
+    echo -e "${RED}[FATAL] Ribosome Translation Failed.${NC}"
+    exit 1
+fi
 
-# 3. Compilation (Stability Optimization)
-# ---------------------------------------------------------
-echo -e "${YELLOW}[3/5] Compiling for Strix Halo (Stability Mode)...${NC}"
+# =========================================================
+# 5. DYNAMIC GOLGI SEEKING & SURGICAL EXCISION
+# =========================================================
+echo -e "${CYAN} -> Golgi Apparatus seeking Kernel RPMs...${NC}"
 
-# Section 8.0: Revert -O3 to -O2 for safety.
-# Use x86-64-v4 (AVX-512) for Zen 5 compatibility without experimental risk.
+KERNEL_VER=$(make kernelrelease)
+RPM_VER=$(echo "$KERNEL_VER" | tr '-' '_')
+RPM_DIR=""
 
-MARCH="x86-64-v4"
-echo "[INFO] Targeting x86-64-v4 (AVX-512 Safe Mode)."
+if [ -d "$BUILD_DIR/rpmbuild/RPMS/x86_64" ]; then
+    RPM_DIR="$BUILD_DIR/rpmbuild/RPMS/x86_64"
+elif [ -d "$HOME/rpmbuild/RPMS/x86_64" ]; then
+    RPM_DIR="$HOME/rpmbuild/RPMS/x86_64"
+else
+    echo -e "${RED}[FATAL] Golgi Apparatus failed to locate rpmbuild directory.${NC}"
+    exit 1
+fi
 
-# 4. The Build
-# ---------------------------------------------------------
-# We use -O2 for rigorous stability.
-make -j$(nproc) KCFLAGS="-march=$MARCH -O2" binrpm-pkg
+if ls "$RPM_DIR"/kernel-*-"$RPM_VER"*.rpm 1> /dev/null 2>&1; then
+    rm -f "$RPM_DIR"/kernel-headers-*.rpm
+    
+    sudo rpm -ivh --replacefiles --replacepkgs --oldpackage "$RPM_DIR"/kernel-*.rpm
+
+    echo -e "${YELLOW} -> [FIRMWARE INJECTION] Packing massive AMD firmware payload via Dracut...${NC}"
+    # Restored Dracut injection to catch all cascading firmware requests (DCN, SMU, MES, VCN, NPU)
+    sudo dracut --force --verbose --include /lib/firmware/amdgpu /lib/firmware/amdgpu --include /lib/firmware/amd-xdna /lib/firmware/amd-xdna --kver "$KERNEL_VER"
+    
+    NEW_VMLINUZ=$(ls /boot/vmlinuz-"$KERNEL_VER" 2>/dev/null | head -n 1)
+    if [ -n "$NEW_VMLINUZ" ]; then
+        GOOD_ARGS="selinux=0 amdgpu.sg_display=1 amdgpu.cwsr_enable=0 amd_iommu=on iommu=pt amdgpu.svm=1 amdgpu.gpu_recovery=1 ttm.pages_limit=31457280 preempt=full mitigations=off"
+        sudo grubby --update-kernel="$NEW_VMLINUZ" --args="$GOOD_ARGS"
+        echo -e "${GREEN} -> Strix Halo Antidote injected into bootloader.${NC}"
+    fi
+else
+    echo -e "${RED}[FATAL] Directory found, but no matching RPMs for $RPM_VER exist.${NC}"
+    exit 1
+fi
 
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   PHRONESIS BORN. RPMs LOCATED IN ~/rpmbuild/RPMS/    ║${NC}"
+echo -e "${GREEN}║   APEX PREDATOR FORGED. REBOOT TO talos-chimera.      ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════╝${NC}"
