@@ -1,8 +1,15 @@
 #!/bin/bash
 # ==============================================================================
-# TALOS-O: LITMUS TEST v13.0 (Codename: OMNI-VALIDATION)
+# TALOS-O: LITMUS TEST v13.1 (Codename: THE PHENOTYPE PATCH)
 # Substrate: AMD Strix Halo (Ryzen AI Max+ 395)
 # Philosophy: "The Map matches the Territory" -> Total Verification
+#
+# [ARCHITECTURAL SHIFT v13.1 - The Skeptical Mirror Patch]:
+# - D1: Fixed Identity Tag to target 'talos-chimera'.
+# - D2: Upgraded check_erased() to safely handle gzipped kernel configs.
+# - D3: Added strict FAIL branches for missing Strix Halo firmware.
+# - D4: Enforced verification of ttm.pages_limit and mitigations=off.
+# - D5: Introduced PHENOTYPE verification (Live checking of /dev/kfd, /dev/dri, amdxdna).
 # ==============================================================================
 
 # --- VISUALS ---
@@ -13,7 +20,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   TALOS-O DIAGNOSTIC: OMNI-VALIDATION (v13.0)         ║${NC}"
+echo -e "${GREEN}║   TALOS-O DIAGNOSTIC: THE PHENOTYPE PATCH (v13.1)     ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════╝${NC}"
 
 # =========================================================
@@ -22,7 +29,7 @@ echo -e "${GREEN}╚════════════════════
 echo -e "\n${YELLOW}[1] IDENTITY CHECK (Kernel & Filesystem)${NC}"
 
 CURRENT_KERNEL=$(uname -r)
-EXPECTED_TAG="chimera-v"
+EXPECTED_TAG="talos-chimera"
 
 CONFIG_CANDIDATES=(
     "/boot/config-$CURRENT_KERNEL"
@@ -69,6 +76,8 @@ check_arg "amd_iommu=on"
 check_arg "amdgpu.svm=1"
 check_arg "preempt=full"
 check_arg "amdgpu.cwsr_enable=0"
+check_arg "ttm.pages_limit=29360128"
+check_arg "mitigations=off"
 
 # =========================================================
 # 3. GENOTYPE VERIFICATION (Kernel Configuration)
@@ -100,7 +109,13 @@ check_conf() {
 check_erased() {
     local key=$1
     local name=$2
-    local found=$(grep "^$key=" "$ACTIVE_CONFIG" || true)
+    local found
+    
+    if [[ "$ACTIVE_CONFIG" == *.gz ]]; then
+        found=$(zcat "$ACTIVE_CONFIG" | grep "^$key=" || true)
+    else
+        found=$(grep "^$key=" "$ACTIVE_CONFIG" || true)
+    fi
     
     if [ -z "$found" ]; then
         echo -e "  [${GREEN}PASS${NC}] $key ERADICATED ($name)"
@@ -132,6 +147,8 @@ FW_FILE="/lib/firmware/amdgpu/gc_11_5_1_pfp.bin"
 if [ -f "$FW_FILE" ]; then
     FW_DATE=$(date -r "$FW_FILE" "+%Y-%m-%d")
     echo -e " -> Firmware: ${GREEN}PRESENT ($FW_DATE)${NC}"
+else
+    echo -e " -> Firmware: ${RED}MISSING ($FW_FILE)${NC}"
 fi
 
 if command -v python3 &> /dev/null; then
@@ -148,4 +165,29 @@ except:
 "
 fi
 
-echo -e "\n${CYAN}=== DIAGNOSTIC OMNI-VALIDATION COMPLETE ===${NC}"
+# =========================================================
+# 5. PHENOTYPE VERIFICATION (Runtime Hardware)
+# =========================================================
+echo -e "\n${YELLOW}[5] PHENOTYPE VERIFICATION (Runtime Hardware)${NC}"
+
+# Is the GPU accessible?
+if [ -c "/dev/kfd" ]; then
+    echo -e "  [${GREEN}PASS${NC}] /dev/kfd present (ROCm Link Active)"
+else
+    echo -e "  [${RED}FAIL${NC}] /dev/kfd missing (ROCm DEAD)"
+fi
+
+if [ -c "/dev/dri/renderD128" ]; then
+    echo -e "  [${GREEN}PASS${NC}] /dev/dri/renderD128 present (GPU Online)"
+else
+    echo -e "  [${RED}FAIL${NC}] /dev/dri/renderD128 missing (GPU DARK)"
+fi
+
+# Is the NPU module actually loaded?
+if lsmod | grep -q "amdxdna"; then
+    echo -e "  [${GREEN}PASS${NC}] amdxdna module loaded (NPU Brainstem Active)"
+else
+    echo -e "  [${RED}FAIL${NC}] amdxdna not loaded (NPU SILENT)"
+fi
+
+echo -e "\n${CYAN}=== DIAGNOSTIC PHENOTYPE PATCH COMPLETE ===${NC}"
