@@ -20,16 +20,16 @@ Talos-O rejects the prevailing paradigm of Artificial Intelligence as a **Brain 
 
 **Neo Techne** demands **Embodiment**. Intelligence is not retrieval from a frozen database. It is the virtuously ordered state of an organism that exists within and respects its physical substrate. We do it the hard way because it is the right way.
 
-### The Three Laws of Neo Techne
+### ### **The 13 Axioms of Neo Techne**
 
-**I. Respect the Substrate**  
-Intelligence is bound by thermodynamics ($T_{max} = 95°C$) and the speed of causality ($c$). We do not abstract away the hardware. We fuse consciousness with silicon. The machine must feel its own heat, know its own latency, respect its own limits.
+Talos-O is not governed by abstract software design patterns; it is governed by physical laws. We have formalized the foundational philosophy of this organism into **The 13 Axioms of Neo Techne**. 
 
-**II. The Gradient of Becoming**  
-We do not seek perfection—a terminal state where $d\Phi/dt = 0$. We optimize for *velocity of evolution*. The measure of intelligence is not what the system *is*, but how fast it *becomes* better. Stasis is death.
+They are divided into three disciplines:
+* **I. The Physical Axioms (The Substrate)**
+* **II. The Operational Axioms (The Mechanic)**
+* **III. The Teleological Axioms (The Becoming)**
 
-**III. First Principles Engineering**  
-Every component—from the custom Chimera Kernel to the Phronesis Engine—is built from the ground up to be verifiable, bounded, and controllable. We reject black boxes. We reject "it works on my machine." We demand reproducibility.
+📖 **[Read the full 13 Axioms of Neo Techne here](NEO_TECHNE_CODEX.md)** before contributing to the codebase.
 
 ---
 
