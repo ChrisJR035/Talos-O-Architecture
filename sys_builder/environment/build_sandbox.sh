@@ -15,8 +15,8 @@ cat <<EOF > Dockerfile.sandbox
 FROM fedora:41 AS builder
 
 # 1. Install Build Dependencies
-RUN dnf install -y git make gcc gcc-c++ zlib-devel bzip2-devel readline-devel \
-    sqlite-devel openssl-devel tk-devel libffi-devel xz-devel uuid-devel \
+RUN dnf install -y git make gcc gcc-c++ zlib-devel bzip2-devel readline-devel \\
+    sqlite-devel openssl-devel tk-devel libffi-devel xz-devel uuid-devel \\
     gdbm-devel ncurses-devel findutils
 
 # 2. Clone CPython 3.13 (Free-Threaded Branch)
@@ -26,8 +26,11 @@ RUN git clone --branch 3.13 https://github.com/python/cpython.git --depth 1
 # 3. Compile Free-Threaded Python
 WORKDIR /src/cpython
 # --disable-gil: The critical flag for Talos-O architecture
-RUN ./configure --disable-gil --enable-optimizations --prefix=/opt/talos-python \
-    && make -j\$(nproc) \
+# [THERMODYNAMIC UPGRADE]: Capped at -j16. Do not use \$(nproc).
+# Saturating all 32 threads on Strix Halo starves the Cerberus thermal daemon
+# and risks catastrophic APU thermal throttling during the forge.
+RUN ./configure --disable-gil --enable-optimizations --prefix=/opt/talos-python \\
+    && make -j16 \\
     && make install
 
 # ==========================================
@@ -36,14 +39,14 @@ RUN ./configure --disable-gil --enable-optimizations --prefix=/opt/talos-python 
 FROM fedora:41
 
 # 1. Install Runtime Libraries Only (Keep it lightweight)
-RUN dnf install -y zlib bzip2 readline sqlite openssl tk libffi xz \
+RUN dnf install -y zlib bzip2 readline sqlite openssl tk libffi xz \\
     && dnf clean all
 
 # 2. Copy the Forged Python from Stage 1
 COPY --from=builder /opt/talos-python /opt/talos-python
 
 # 3. Link binaries to path
-RUN ln -s /opt/talos-python/bin/python3.13t /usr/local/bin/python3 && \
+RUN ln -s /opt/talos-python/bin/python3.13t /usr/local/bin/python3 && \\
     ln -s /opt/talos-python/bin/pip3.13t /usr/local/bin/pip3
 
 # 4. Create Talos User (Low Privilege / Security Boundary)
@@ -64,19 +67,14 @@ echo "[-] Building 'talos-sandbox' image (This will compile Python 3.13t)..."
 
 # Engine Detection & Build
 if command -v podman &> /dev/null; then
-    echo "[*] Engine: Podman detected."
+    echo "[*] Engine: Podman detected. (Zero-Daemon RAM Overhead)"
     sudo podman build -t talos-sandbox -f Dockerfile.sandbox .
     echo "[+] SUCCESS: Talos Sandbox (No-GIL) forged with Podman."
 elif command -v docker &> /dev/null; then
-    echo "[*] Engine: Docker detected."
+    echo "[*] Engine: Docker detected. WARNING: dockerd consumes ~150MB idle RAM."
     sudo docker build -t talos-sandbox -f Dockerfile.sandbox .
-    echo "[+] SUCCESS: Talos Sandbox (No-GIL) forged with Docker."
+    echo "[+] SUCCESS: Talos Sandbox forged with Docker."
 else
-    echo "[!] CRITICAL: No container engine found. Install Docker or Podman."
-    rm Dockerfile.sandbox
+    echo "[FATAL] No container engine found. Cannot forge the Vault."
     exit 1
 fi
-
-# Cleanup
-rm Dockerfile.sandbox
-echo "[*] Sandbox Ready. Test with: docker run --rm talos-sandbox python3 -c 'import sys; print(sys._is_gil_enabled())'"

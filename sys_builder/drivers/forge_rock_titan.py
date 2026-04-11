@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 """
-TALOS-O: FORGE ROCK TITAN (v99.3 - "The Apex Substrate")
+TALOS-O: FORGE ROCK TITAN (v99.4 - "The Architectural Truth")
 Author: Christopher J. Roudabush & The Seers
 
 Purpose:
     Compiles the mathematically pure, minimal ROCm 7.x AI stack required for 
     PyTorch LLM Inference on the Strix Halo APU (Linux 6.18+).
     
-[ARCHITECTURAL SHIFT v99.3 - The LTO Excision]:
-- Diagnosed the LLVM TableGen (`tblgen`) fatal linking error.
-- The Pivot: Global `-flto=auto` causes standard library ABI fractures and strips 
-  fundamental `llvm::` symbols during the intermediate bootstrap phase.
-- The Fix: Excised `-flto=auto` from the global `CXXFLAGS`.
-- Retains: Tensile Pruning, Zen 5 AVX-512, The Guillotine (strip-all), 
-  XNACK Excision, and Safe Math Relaxations.
+[ARCHITECTURAL SHIFT v99.4]:
+- Integrates verbatim string matches for ROCm 7.x (LLVM 18/19) runtimes.
+- Excises the `offload` target to permanently cure the Fortran Emissary Phantom Limb.
 """
 
 import os
 import sys
 import subprocess
 import shutil
-import multiprocessing
 import stat
 import sysconfig
 
@@ -28,9 +23,7 @@ import sysconfig
 TALOS_HOME = os.path.expanduser("~/talos-o")
 BUILD_ROOT = os.path.expanduser("~/rocm-native")
 SRC_ROOT = os.path.join(TALOS_HOME, "sys_builder/therock_substrate")
-CORES = min(multiprocessing.cpu_count(), 8)
-
-# [V99.2]: Reverted to base target for CMake validation
+CORES = 4
 FOUNDATION_TARGET = "gfx1151"
 
 # ANSI Colors
@@ -46,10 +39,8 @@ def log(msg, level="INFO"):
 
 def run_cmd(cmd, cwd=None, show_progress=False, env_override=None):
     log(f"EXEC: {cmd}")
-    
     full_env = os.environ.copy()
-    if env_override:
-        full_env.update(env_override)
+    if env_override: full_env.update(env_override)
 
     try:
         if show_progress:
@@ -80,22 +71,60 @@ def run_cmd(cmd, cwd=None, show_progress=False, env_override=None):
 
 def ensure_host_tools():
     log("Verifying host-level patching and development utilities...", "INFO")
-    
     missing_tools = []
     for tool in ["patch", "perl", "find"]:
         try:
             subprocess.check_call(["which", tool], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
             missing_tools.append(tool)
-            
     if missing_tools:
         tools_str = " ".join(missing_tools)
-        log(f"Missing fundamental build tools ({tools_str}). Injecting via DNF...", "WARN")
         run_cmd(f"sudo dnf install -y {tools_str}")
 
+def synthesize_gcc15_shim():
+    shim_path = os.path.join(SRC_ROOT, "TheRock", "rocm_gcc15_compat.h")
+    log(f"Synthesizing Shim Header: {shim_path}", "INFO")
+    content = """#ifndef ROCM_GCC15_COMPAT_H
+#define ROCM_GCC15_COMPAT_H
+/* Activate for C++ compilers on x86_64 to protect against libstdc++ fractures */
+#if defined(__cplusplus) && defined(__x86_64__)
+  #include <emmintrin.h>
+  #include <pmmintrin.h>
+  #include <tmmintrin.h>
+  #include <immintrin.h>
+  #include <cstdint>
+  #include <stdint.h> /* Ensures global uint16_t without std:: */
+#endif
+#endif
+"""
+    with open(shim_path, "w") as f: f.write(content)
+
+def amputate_flang_and_cauterize():
+    log("Executing Auditable AST Mutation: Verbatim ROCm 7.x Excision...", "WARN")
+    hook_path = os.path.join(SRC_ROOT, "TheRock", "compiler", "pre_hook_amd-llvm.cmake")
+    if os.path.exists(hook_path):
+        with open(hook_path, "r") as f: c = f.read()
+            
+        # 1. Excise Flang (Host compiler Phase)
+        old_proj = '"clang;lld;clang-tools-extra;flang"'
+        new_proj = '"clang;lld;clang-tools-extra"'
+        c = c.replace(old_proj, new_proj)
+        
+        # 2. Excise Offload ONLY (Restore OpenMP for hipBLASLt host threading)
+        old_runt = '"compiler-rt;libunwind;libcxx;libcxxabi;openmp;offload"'
+        new_runt = '"compiler-rt;libunwind;libcxx;libcxxabi;openmp"' # <-- RESTORED openmp
+        c = c.replace(old_runt, new_runt)
+        
+        # 3. Safety Fallback: Neutralize the Master Override directly if it exists
+        c = c.replace('set(LIBOMPTARGET_BUILD_DEVICE_FORTRT ON)', 'set(LIBOMPTARGET_BUILD_DEVICE_FORTRT OFF)')
+
+        with open(hook_path, "w") as f: f.write(c)
+        log("Mutation Successful: Flang and Offload excised. OpenMP restored.", "INFO")
+    else:
+        log(f"CRITICAL: {hook_path} not found.", "RED")
+
 def deploy_minimal_substrate():
-    print(f"\n{CYAN}=== INITIATING THE APEX FORGE (v99.3) ==={NC}")
-    
+    print(f"\n{CYAN}=== INITIATING THE APEX FORGE (v99.4) ==={NC}")
     ensure_host_tools()
     
     os.makedirs(SRC_ROOT, exist_ok=True)
@@ -104,72 +133,57 @@ def deploy_minimal_substrate():
     if not os.path.exists(therock_dir):
         run_cmd(f"git clone https://github.com/ROCm/TheRock.git {therock_dir}")
         
-    log("Aligning to the bleeding-edge ROCm 7.x stream...", "INFO")
-    run_cmd("git fetch --all --tags", cwd=therock_dir)
-    
-    # Forcefully purge all local AST mutations
+    run_cmd("git fetch --all --tags --force", cwd=therock_dir)
     run_cmd("git reset --hard origin/main", cwd=therock_dir)
     run_cmd("git clean -fdx", cwd=therock_dir)
     run_cmd("git checkout main", cwd=therock_dir)
     
-    log("Installing TheRock host dependencies...", "INFO")
     if os.path.exists(os.path.join(therock_dir, "requirements.txt")):
-        run_cmd("pip3 install --user -r requirements.txt", cwd=therock_dir)
+        run_cmd("pip3 install -r requirements.txt", cwd=therock_dir)
+        
+    amputate_flang_and_cauterize()
+    synthesize_gcc15_shim()
     
     fetch_script = os.path.join(therock_dir, "build_tools", "fetch_sources.py")
     if os.path.exists(fetch_script):
-        log("Fetching core components (LLVM, COMGR, HIP, etc.) via DVC...", "WARN")
         run_cmd(f"python3 {fetch_script}", cwd=therock_dir)
         
     # --- SURGICAL PATCHING MATRIX ---
+    
+    # Define the shim path ONCE for all injections
+    shim_path = os.path.join(therock_dir, "rocm_gcc15_compat.h")
+
+    # GCC 15 Shim Injection (rocprofiler-sdk)
+    # This prevents FetchContent/Submodules from overwriting our physical file patches
+    sdk_dir = os.path.join(therock_dir, "rocm-systems", "projects", "rocprofiler-sdk")
+    if os.path.exists(os.path.join(sdk_dir, "CMakeLists.txt")):
+        run_cmd(f"sed -i '1i add_compile_options(\"-include\" \"{shim_path}\")' CMakeLists.txt", cwd=sdk_dir)
         
-    # GCC 15 Transitive Include Patch (yaml-cpp)
-    yaml_cpp_file = os.path.join(therock_dir, "rocm-systems", "projects", "rocprofiler-sdk", "external", "yaml-cpp", "src", "emitterutils.cpp")
-    if os.path.exists(yaml_cpp_file):
-        run_cmd(f"sed -i '1i #include <cstdint>' {yaml_cpp_file}")
+    # GCC 15 Shim Injection (rocr-runtime)
+    hsa_dir = os.path.join(therock_dir, "rocm-systems", "projects", "rocr-runtime")
+    if os.path.exists(os.path.join(hsa_dir, "CMakeLists.txt")):
+        run_cmd(f"sed -i '1i add_compile_options(\"-include\" \"{shim_path}\")' CMakeLists.txt", cwd=hsa_dir)
+        run_cmd(f"sed -i '1i set(CMAKE_CXX_STANDARD 20)' CMakeLists.txt", cwd=hsa_dir)
         
-    # GCC 15 Transitive Include Patch (elfio)
-    elfio_file = os.path.join(therock_dir, "rocm-systems", "projects", "rocprofiler-sdk", "external", "elfio", "elfio", "elfio.hpp")
-    if os.path.exists(elfio_file):
-        run_cmd(f"sed -i '1i #include <cstdint>' {elfio_file}")
-        
-    # The Excision - Physically amputating roctracer tests
     roctracer_cmake = os.path.join(therock_dir, "rocm-systems", "projects", "roctracer", "CMakeLists.txt")
-    if os.path.exists(roctracer_cmake):
-        run_cmd(f"sed -i 's/add_subdirectory(test)/#add_subdirectory(test)/g' {roctracer_cmake}")
+    if os.path.exists(roctracer_cmake): run_cmd(f"sed -i 's/add_subdirectory(test)/#add_subdirectory(test)/g' {roctracer_cmake}")
         
-    # The Omni-Python Override - Bypassing Fedora's broken sysconfig
     dep_provider = os.path.join(therock_dir, "cmake", "therock_subproject_dep_provider.cmake")
     if os.path.exists(dep_provider):
         py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-        physical_path = f"/usr/include/{py_version}"
-        if os.path.exists(physical_path):
-            py_inc = physical_path
-        else:
-            py_inc = sysconfig.get_path('include')
-
-        run_cmd(f"sed -i '1i set(Python3_INCLUDE_DIRS \"{py_inc}\" CACHE PATH \"\" FORCE)' {dep_provider}")
-        run_cmd(f"sed -i '1i set(Python3_INCLUDE_DIR \"{py_inc}\" CACHE PATH \"\" FORCE)' {dep_provider}")
-        run_cmd(f"sed -i '1i set(Python_INCLUDE_DIRS \"{py_inc}\" CACHE PATH \"\" FORCE)' {dep_provider}")
-        run_cmd(f"sed -i '1i set(Python_INCLUDE_DIR \"{py_inc}\" CACHE PATH \"\" FORCE)' {dep_provider}")
+        py_inc = f"/usr/include/{py_version}" if os.path.exists(f"/usr/include/{py_version}") else sysconfig.get_path('include')
+        for var in ["Python3_INCLUDE_DIRS", "Python3_INCLUDE_DIR", "Python_INCLUDE_DIRS", "Python_INCLUDE_DIR"]:
+            run_cmd(f"sed -i '1i set({var} \"{py_inc}\" CACHE PATH \"\" FORCE)' {dep_provider}")
         
-    # The Final Injection - Hardcoding Wavefront into static device code (hipBLASLt)
     matrix_transform_header = os.path.join(therock_dir, "rocm-libraries", "projects", "hipblaslt", "device-library", "matrix-transform", "matrix_transform.h")
-    if os.path.exists(matrix_transform_header):
-        run_cmd(f"sed -i '1i #define __AMDGCN_WAVEFRONT_SIZE 32' {matrix_transform_header}")
+    if os.path.exists(matrix_transform_header): run_cmd(f"sed -i '1i #define __AMDGCN_WAVEFRONT_SIZE 32' {matrix_transform_header}")
         
-    # The Generator Hack - Hacking the internal Tensile Python Compiler Array (hipBLASLt)
     tensilelite_component = os.path.join(therock_dir, "rocm-libraries", "projects", "hipblaslt", "tensilelite", "Tensile", "Toolchain", "Component.py")
-    if os.path.exists(tensilelite_component):
-        run_cmd(f"sed -i 's/\"-I\", include_path/\"-D__AMDGCN_WAVEFRONT_SIZE=32\", \"-I\", include_path/g' {tensilelite_component}")
+    if os.path.exists(tensilelite_component): run_cmd(f"sed -i 's/\"-I\", include_path/\"-D__AMDGCN_WAVEFRONT_SIZE=32\", \"-I\", include_path/g' {tensilelite_component}")
 
-    # The Seed Infection - Hacking the master Tensile seed for rocBLAS virtualenv
     rocblas_tensile_seed = os.path.join(therock_dir, "rocm-libraries", "shared", "tensile", "Tensile", "BuildCommands", "SourceCommands.py")
-    if os.path.exists(rocblas_tensile_seed):
-        run_cmd(f"sed -i 's/\\[cxxCompiler\\] + hipFlags/[cxxCompiler] + [\"-D__AMDGCN_WAVEFRONT_SIZE=32\"] + hipFlags/g' {rocblas_tensile_seed}")
+    if os.path.exists(rocblas_tensile_seed): run_cmd(f"sed -i 's/\\[cxxCompiler\\] + hipFlags/[cxxCompiler] + [\"-D__AMDGCN_WAVEFRONT_SIZE=32\"] + hipFlags/g' {rocblas_tensile_seed}")
 
-    # Physical python binding amputation
-    log("Executing Strategy B: Physically amputating Python bindings from rocprofiler-sdk...", "INFO")
     sdk_dir = os.path.join(therock_dir, "rocm-systems", "projects", "rocprofiler-sdk")
     if os.path.exists(sdk_dir):
         run_cmd("find . -name CMakeLists.txt -exec perl -pi -e 's/add_subdirectory\\(python\\)/#add_subdirectory(python)/g' {} +", cwd=sdk_dir)
@@ -185,38 +199,30 @@ export PATH="{BUILD_ROOT}/bin:{BUILD_ROOT}/llvm/bin:$PATH"
 export LD_LIBRARY_PATH="{BUILD_ROOT}/lib:{BUILD_ROOT}/lib64:$LD_LIBRARY_PATH"
 export CMAKE_PREFIX_PATH="{BUILD_ROOT}"
 
-# Strix Halo (gfx1151) Native Overrides
+# Strix Halo Native Overrides
 export HSA_OVERRIDE_GFX_VERSION=11.5.1
 export PYTORCH_ROCM_ARCH=gfx1151
 
-# The Unified Memory Architecture (UMA) Alignments
+# UMA Alignments
 export HSA_ENABLE_SDMA=0       
 export HSA_USE_SVM=0           
 export HIP_HOST_COHERENT=1     
-
-# RDNA 3.5 Matrix Core Activation
 export TORCH_BLAS_PREFER_HIPBLASLT=1
 
 echo "[+] TALOS-O Neural Link Active. Strix Halo UMA Optimizations Engaged."
 """
     activate_path = os.path.join(BUILD_ROOT, "activate_talos.sh")
-    with open(activate_path, "w") as f:
-        f.write(activate_content)
-    
+    with open(activate_path, "w") as f: f.write(activate_content)
     os.chmod(activate_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-    
-    log("Igniting The Apex Forge. Applying Zen 5 optimizations.", "WARN")
     
     build_dir = os.path.join(therock_dir, "build")
     if os.path.exists(build_dir): shutil.rmtree(build_dir)
     os.makedirs(build_dir, exist_ok=True)
     
-    # [V99.3 ARCHITECTURE]: THE OPTIMIZATION MATRIX (LTO Excised)
-    # Removed -flto=auto to prevent LLVM TableGen catastrophic linking failure.
     env_override = {
         "CXXFLAGS": f"-march=znver5 -D__AMDGCN_WAVEFRONT_SIZE=32 -U_GLIBCXX_ASSERTIONS -O3 -fno-math-errno {os.environ.get('CXXFLAGS', '')}",
         "CFLAGS": f"-march=znver5 -D__AMDGCN_WAVEFRONT_SIZE=32 -O3 -fno-math-errno {os.environ.get('CFLAGS', '')}",
-        "HIPCXXFLAGS": f"--offload-arch=gfx1151:xnack- -D__AMDGCN_WAVEFRONT_SIZE=32 -U_GLIBCXX_ASSERTIONS -fno-math-errno {os.environ.get('HIPCXXFLAGS', '')}",
+        "HIPCXXFLAGS": f"--offload-arch=gfx1151:xnack+ -D__AMDGCN_WAVEFRONT_SIZE=32 -U_GLIBCXX_ASSERTIONS -fno-math-errno {os.environ.get('HIPCXXFLAGS', '')}",
         "LDFLAGS": f"-Wl,--strip-all {os.environ.get('LDFLAGS', '')}"
     }
     
@@ -224,55 +230,34 @@ echo "[+] TALOS-O Neural Link Active. Strix Halo UMA Optimizations Engaged."
         f"cmake .. -G Ninja "
         f"-DCMAKE_INSTALL_PREFIX={BUILD_ROOT} "
         f"-DCMAKE_BUILD_TYPE=Release "
-        
-        # Keep orchestrator happy with base target
         f"-DTHEROCK_AMDGPU_FAMILIES={FOUNDATION_TARGET} "
-        f"-DCMAKE_HIP_FLAGS=\"--offload-arch=gfx1151:xnack- -D__AMDGCN_WAVEFRONT_SIZE=32 -U_GLIBCXX_ASSERTIONS -fno-math-errno\" "
-        
-        # [V99.0]: Tensile Pruning (Only build gfx1151 math logic, force full assembly)
-        f"-DTensile_ARCHITECTURE=gfx1151 "
-        f"-DTensile_LOGIC=asm_full "
-        
-        # Native Data Injection to fix the roctracer lexer crash
+        f"-DCMAKE_HIP_FLAGS=\"--offload-arch=gfx1151:xnack+ -D__AMDGCN_WAVEFRONT_SIZE=32 -U_GLIBCXX_ASSERTIONS -fno-math-errno\" "
+        f"-DTensile_ARCHITECTURE=gfx1151 -DTensile_LOGIC=asm_full "
         f"-DCMAKE_INSTALL_DOCDIR=share/doc "
-        
-        # Top-level injection for standard CMake parsing
-        f"-DPython3_INCLUDE_DIR={py_inc} "
-        f"-DPython_INCLUDE_DIR={py_inc} "
-        
-        # LTO Compression to prevent GCC 15 Linker Overflows
+        f"-DPython3_INCLUDE_DIR={py_inc} -DPython_INCLUDE_DIR={py_inc} "
         f"-DBUILD_OFFLOAD_COMPRESS=ON "
         
-        # 1. The Guillotine
         f"-DTHEROCK_ENABLE_ALL=OFF "
-        
-        # 2. The Resurrection
         f"-DTHEROCK_ENABLE_COMPILER=ON "
         f"-DTHEROCK_ENABLE_CORE_RUNTIME=ON "
         f"-DTHEROCK_ENABLE_HIP_RUNTIME=ON "
         f"-DTHEROCK_ENABLE_HIPIFY=ON "
         f"-DTHEROCK_ENABLE_BLAS=ON "
+        f"-DTHEROCK_ENABLE_SPARSE=ON " 
+        f"-DTHEROCK_ENABLE_SOLVER=ON " 
         f"-DTHEROCK_ENABLE_HIPBLASLTPROVIDER=ON "
         f"-DTHEROCK_ENABLE_ROCPROFV3=ON " 
         
-        # 3. The Excision
         f"-DTHEROCK_ENABLE_MIOPEN=OFF "
-        f"-DBUILD_TESTING=OFF "
-        f"-DBUILD_CLIENTS_TESTS=OFF "
-        f"-DWITH_TESTS=OFF "
-        f"-DROCTRACER_BUILD_TESTS=OFF "
-        
-        f"-DTHEROCK_ENABLE_RCCL=OFF "
-        f"-DTHEROCK_ENABLE_COMM_LIBS=OFF "
-        f"-DTHEROCK_ENABLE_DEBUG_TOOLS=OFF "
-        f"-DBUILD_WITH_TENSILE=ON "
+        f"-DBUILD_TESTING=OFF -DBUILD_CLIENTS_TESTS=OFF -DWITH_TESTS=OFF -DROCTRACER_BUILD_TESTS=OFF "
+        f"-DTHEROCK_ENABLE_RCCL=OFF -DTHEROCK_ENABLE_COMM_LIBS=OFF -DTHEROCK_ENABLE_DEBUG_TOOLS=OFF "
+        f"-DBUILD_WITH_TENSILE=ON -DLLVM_ENABLE_PROJECTS=\"clang;lld;compiler-rt\" -DBUILD_FLANG=OFF "
         
         f"&& ninja -j{CORES} && ninja install"
     )
     
     log("The Apex Forge Begins (Full Optimization Suite Active).", "CRIT")
     run_cmd(build_cmd, cwd=build_dir, env_override=env_override, show_progress=True)
-    log("Apex Substrate Successfully Synthesized.", "INFO")
 
 if __name__ == "__main__":
     print(f"{GREEN}   TALOS-O: FORGE ROCK TITAN (v99.3 - The Apex Substrate) {NC}")

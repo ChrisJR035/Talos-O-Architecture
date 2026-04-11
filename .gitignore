@@ -22,3 +22,8 @@ sys_builder/vision/dist/
 # 5. Virtual Environments
 venv/
 .env
+**/CMakeFiles/
+**/*.so
+**/talos_npu_daemon
+**/*.xclbin
+sys_builder/drivers/llvm_project/

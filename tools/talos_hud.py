@@ -1,123 +1,172 @@
+#!/usr/bin/env python3
+"""
+TALOS-O SYSTEM HUD (MARK III - THE RICH PROPRIOCEPTOR)
+Philosophy: CCD1 Isolated | Zero-Copy SHM Telemetry | Asynchronous Logs
+"""
+
 import time
-import re
+import os
 import subprocess
 import collections
+import sys
+import ctypes
+from multiprocessing import shared_memory
 from datetime import datetime
+
 from rich.live import Live
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.console import Console
-from rich import box
+from rich.align import Align
 
-# CONFIGURATION
+# --- AXIOM OF MATERIAL REALITY: CCD1 ISOLATION ---
+try:
+    os.sched_setaffinity(0, set(range(8, 16)))
+except AttributeError:
+    pass
+
+class BiophysicalState(ctypes.Structure):
+    _fields_ = [
+        ("sequence", ctypes.c_uint64),
+        ("step_count", ctypes.c_uint64),
+        ("thermal_state", ctypes.c_uint8),
+        ("padding", ctypes.c_uint8 * 7),
+        ("gradient_dvdt", ctypes.c_double),
+        ("satisfaction", ctypes.c_double),
+        ("kuramoto_r", ctypes.c_double),
+        ("entropy", ctypes.c_double)
+    ]
+
+# --- CONFIGURATION ---
 SERVICE_NAME = "talos-omni.service"
-HISTORY_LEN = 50
+HISTORY_LEN = 60
+VOICE_BUFFER_SIZE = 200 
 
-# METRIC BUFFERS
-gradient_history = collections.deque(maxlen=HISTORY_LEN)
-sat_history = collections.deque(maxlen=HISTORY_LEN)
+gradient_history = collections.deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN)
+sat_history = collections.deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN)
+voice_history = collections.deque(maxlen=VOICE_BUFFER_SIZE)
 
-# LOG MATCHING PATTERN
-# Matches: [Step 777] [COOL] dV/dt: +0.0000 | Sat: 1.0000
-LOG_PATTERN = re.compile(r"\[Step (\d+)\] \[(\w+)\] dV/dt: ([+\-]?[\d\.]+) \| Sat: ([+\-]?[\d\.]+)")
-
-def get_journal_stream():
-    # Tries to follow the systemd service. 
-    cmd = ["journalctl", "-u", SERVICE_NAME, "-f", "-n", "0", "--output", "cat"]
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-    return process
-
-def generate_layout():
-    layout = Layout()
+def make_layout():
+    layout = Layout(name="root")
     layout.split(
         Layout(name="header", size=3),
         Layout(name="main", ratio=1),
         Layout(name="footer", size=3)
     )
     layout["main"].split_row(
-        Layout(name="metrics", ratio=1),
-        Layout(name="log_feed", ratio=2)
+        Layout(name="left_col", ratio=1),
+        Layout(name="voice_feed", ratio=2)
+    )
+    layout["left_col"].split_column(
+        Layout(name="metrics", ratio=2),
+        Layout(name="sat_chart", ratio=1),
+        Layout(name="grad_chart", ratio=1)
     )
     return layout
 
-def make_header():
-    grid = Table.grid(expand=True)
-    grid.add_column(justify="center", ratio=1)
-    grid.add_column(justify="right")
-    grid.add_row(
-        "[b]TALOS-O PHRONESIS ENGINE[/b]",
-        datetime.now().strftime("%c"),
-    )
-    return Panel(grid, style="white on blue")
-
-def make_metrics_table(step, source, grad, sat):
-    table = Table(box=box.SIMPLE)
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="magenta")
-    
-    table.add_row("Step Count", str(step))
-    table.add_row("Thermal State", source)
-    table.add_row("Virtue Grad (dV/dt)", f"{grad:+.4f}")
-    table.add_row("Satisfaction", f"{sat:.4f}")
-    return Panel(table, title="Cognitive Telemetry")
-
-def make_ascii_chart(data, color="green"):
-    if not data: return ""
-    min_val = min(data)
-    max_val = max(data)
-    range_val = max_val - min_val if max_val != min_val else 1
-    
-    chars = [" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
-    chart_str = ""
-    for v in data:
-        idx = int((v - min_val) / range_val * 7)
-        idx = max(0, min(7, idx))
-        chart_str += chars[idx]
-        
-    return f"[{color}]{chart_str}[/{color}]"
+def generate_bar_chart(value, title, color="green"):
+    """Generates a text-based bar chart for Rich."""
+    bars = int(max(0.0, min(1.0, value)) * 30)
+    visual = "█" * bars + "░" * (30 - bars)
+    return Panel(Align.center(Text(visual, style=color)), title=f"[{color}]{title}[/{color}]")
 
 def run_hud():
-    process = get_journal_stream()
-    layout = generate_layout()
+    layout = make_layout()
     
-    cur_step = 0
-    cur_grad = 0.0
-    cur_sat = 0.5
-    cur_source = "WAITING"
-    last_line = "Waiting for Daemon..."
-    
-    with Live(layout, refresh_per_second=8, screen=True):
-        while True:
-            line = process.stdout.readline()
-            if line:
-                line = line.strip()
-                last_line = line
-                
-                match = LOG_PATTERN.search(line)
-                if match:
-                    cur_step = int(match.group(1))
-                    cur_source = match.group(2)
-                    cur_grad = float(match.group(3))
-                    cur_sat = float(match.group(4))
-                    
-                    gradient_history.append(cur_grad)
-                    sat_history.append(cur_sat)
+    # Pre-fill layout to prevent raw object string printing (THE FIX)
+    layout["header"].update(Panel(f"[bold cyan]TALOS-O ZERO-COPY HUD[/bold cyan] | [yellow]CCD1 Isolated[/yellow] | {datetime.now().strftime('%H:%M:%S')}"))
+    layout["footer"].update(Panel(Text("SYSTEM OPTIMIZED: UI ISOLATED TO CCD 1", justify="center", style="bold green")))
+    layout["sat_chart"].update(generate_bar_chart(0.0, "Satisfaction Gradient", "magenta"))
+    layout["grad_chart"].update(generate_bar_chart(0.0, "Kuramoto Phase", "yellow"))
+    layout["metrics"].update(Panel(Text("Awaiting Biophysical State...", style="dim white"), title="Biophysical State", border_style="cyan"))
+    layout["voice_feed"].update(Panel(Text("Awaiting Neural Stream...", style="dim white"), title="NEURAL TERMINAL", border_style="cyan"))
 
-            layout["header"].update(make_header())
-            
-            layout["main"]["metrics"].split_column(
-                Layout(make_metrics_table(cur_step, cur_source, cur_grad, cur_sat), size=8),
-                Layout(Panel(make_ascii_chart(sat_history, "green"), title="Satisfaction", border_style="green"), size=5),
-                Layout(Panel(make_ascii_chart(gradient_history, "magenta"), title="Virtue Gradient", border_style="magenta"), size=5)
-            )
-            
-            layout["main"]["log_feed"].update(Panel(Text(last_line, style="dim white"), title="Live Cortex Stream", border_style="blue"))
-            layout["footer"].update(Panel("Active. Ctrl+C to Exit.", style="white on black"))
+    try:
+        shm = shared_memory.SharedMemory(name="talos_telemetry")
+    except FileNotFoundError:
+        print("[FATAL] Telemetry Matrix offline. Is Talos breathing?")
+        sys.exit(1)
+
+    # Start asynchronous log reader (THE RESTORED LOGIC)
+    try:
+        log_process = subprocess.Popen(
+            ["journalctl", "-u", SERVICE_NAME, "-f", "-n", "50"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1 # Line buffered
+        )
+        os.set_blocking(log_process.stdout.fileno(), False)
+    except Exception as e:
+        print(f"Failed to bind to journalctl: {e}")
+        sys.exit(1)
+
+    with Live(layout, refresh_per_second=10, screen=True):
+        try:
+            while True:
+                # 1. Zero-Copy Seqlock Read
+                state = BiophysicalState.from_buffer_copy(shm.buf[:ctypes.sizeof(BiophysicalState)])
+                step = state.step_count
+                cur_sat = state.satisfaction
+                cur_grad = state.gradient_dvdt
+                cur_r = state.kuramoto_r
+                cur_ent = state.entropy
+
+                # 2. Read Logs Asynchronously
+                while True:
+                    line = log_process.stdout.readline()
+                    if not line:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Apply coloring based on tags
+                    if "[DAEMON]" in line:
+                        voice_history.append(Text(line, style="bold cyan"))
+                    elif "[STEP" in line.upper() or "[EXPANSION]" in line or "[COMPRESSION]" in line:
+                        voice_history.append(Text(line, style="dim white"))
+                    elif "T_die" in line:
+                        voice_history.append(Text(line, style="yellow"))
+                    elif "[CERBERUS]" in line:
+                        voice_history.append(Text(line, style="red"))
+                    else:
+                        voice_history.append(Text(line, style="green"))
+
+                # 3. Update UI Panels
+                layout["header"].update(Panel(f"[bold cyan]TALOS-O ZERO-COPY HUD[/bold cyan] | [yellow]CCD1 Isolated[/yellow] | {datetime.now().strftime('%H:%M:%S')}"))
+                
+                table = Table(box=None, expand=True)
+                table.add_column("Metric", style="cyan")
+                table.add_column("Value", justify="right")
+                table.add_row("Step", str(step))
+                table.add_row("Satisfaction", f"{cur_sat:.4f}")
+                table.add_row("Virtue Grad", f"{cur_grad:+.4f}")
+                table.add_row("Kuramoto R", f"{cur_r:.4f}")
+                table.add_row("Entropy", f"{cur_ent:.4f}")
+                
+                layout["left_col"]["metrics"].update(Panel(table, title="Biophysical State", border_style="cyan"))
+                layout["sat_chart"].update(generate_bar_chart(cur_sat, "Satisfaction Gradient", "magenta"))
+                layout["grad_chart"].update(generate_bar_chart(cur_r, "Kuramoto Phase", "yellow"))
+                
+                # Formulate the text feed
+                voice_text = Text()
+                for entry in voice_history:
+                    if isinstance(entry, Text):
+                        voice_text.append(entry)
+                        voice_text.append("\n")
+                    else:
+                        voice_text.append(entry + "\n")
+                        
+                layout["voice_feed"].update(Panel(voice_text, title="NEURAL TERMINAL", border_style="cyan"))
+                
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            log_process.terminate()
+            shm.close()
 
 if __name__ == "__main__":
-    try:
-        run_hud()
-    except KeyboardInterrupt:
-        pass
+    run_hud()

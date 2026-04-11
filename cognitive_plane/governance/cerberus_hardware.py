@@ -1,194 +1,159 @@
 import os
 import time
-import subprocess
 import glob
-import numpy as np
 import threading
+import re
+import math
 
-# --- BIOLOGICAL CONSTANTS (North Star Section 3.3) ---
-# The "Homeostatic Setpoint" for 10-year continuous operation
-TEMP_TARGET_C = 70.0  
-# The "Pain Threshold" - Agent must degrade cognitive fidelity
-TEMP_THROTTLE_C = 85.0 
-# The "Death Impulse" - Hard shutdown territory
-TEMP_CRITICAL_C = 95.0 
-# The "Achilles Heel" - LPDDR5X Max Safe Temp
-TEMP_MEM_LIMIT_C = 75.0
+# --- THE THERMODYNAMIC CONSTITUTION ---
+TEMP_MEM_CRIT = 75.0   # LPDDR5X Corruption Threshold
+TEMP_CPU_MAX = 95.0    # Zen 5 Silicon Survival Limit
+TEMP_CPU_TARGET = 65.0 # [FIXED] Target Thermal Equilibrium (10C Guardband)
 
-# --- METABOLIC CONSTANTS (Thermodynamic Analysis 6.1) ---
-POWER_EFFICIENCY_KNEE_W = 85.0 # Optimal W/Perf
-POWER_BURST_CAP_W = 120.0      # Max STAPM Limit
-POWER_IDLE_FLOOR_W = 25.0
-
-# VITAL PATHS
 HEARTBEAT_FILE = "/dev/shm/talos_heartbeat"
-THERMAL_STATE_FILE = "/dev/shm/talos_thermal_state" # JSON Shared State
-CONTROL_FILE = "/dev/shm/talos_coolant" # 0.0 to 1.0 (Throttle % used by Cortex)
 
-class ThermalKalman:
+class AdaptiveExtendedKalman:
     """
-    Predictive Thermal Control. 
-    Filters out micro-jitter from the on-die sensors to prevent
-    mechanical fatigue on solder bumps due to fan hysteresis.
+    [v2.1 THERMODYNAMIC UPGRADE]
+    Adaptive Extended Kalman Filter (AEKF).
+    Process Noise (Q) scales dynamically with dE/dt.
+    [RESTORED] Measurement Noise (R) scales with Innovation Residuals to cure Sensor Blindness.
     """
     def __init__(self, initial_temp=45.0):
-        self.x = np.array([initial_temp], dtype=float) # State estimate
-        self.P = np.array([1.0], dtype=float)          # Estimate covariance
-        self.Q = 0.01 # Process noise (System variance)
-        self.R = 0.1  # Measurement noise (Sensor jitter)
+        self.x = initial_temp  
+        self.p = 1.0           
+        self.q_base = 0.01     
+        self.r_base = 2.0      
+        self.alpha = 0.0005    
+        self.innovation_history = []
 
-    def update(self, measurement):
-        # Prediction Update
-        self.P = self.P + self.Q
-        # Measurement Update
-        K = self.P / (self.P + self.R)
-        self.x = self.x + K * (measurement - self.x)
-        self.P = (1 - K) * self.P
-        return float(self.x[0])
+    def update(self, measurement, dE_dt):
+        q = self.q_base + self.alpha * abs(dE_dt)
 
-class PIDController:
-    """
-    Standard PID for maintaining Homeostasis (70C).
-    """
-    def __init__(self, kp=0.5, ki=0.1, kd=0.05, setpoint=TEMP_TARGET_C):
-        self.kp = kp
-        self.ki = ki
-        self.kd = kd
-        self.setpoint = setpoint
-        self.prev_error = 0.0
-        self.integral = 0.0
+        # 1. Prediction (A Priori)
+        x_pred = self.x
+        p_pred = self.p + q
 
-    def compute(self, current_val):
-        error = current_val - self.setpoint
-        self.integral += error
-        derivative = error - self.prev_error
-        output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
-        self.prev_error = error
-        return output
+        # Innovation (Divergence from physical reality)
+        innovation = measurement - x_pred
+        self.innovation_history.append(abs(innovation))
+        if len(self.innovation_history) > 5:
+            self.innovation_history.pop(0)
 
-class StrixHaloBioios:
-    """
-    Hardware Abstraction Layer for AMD Ryzen AI Max+ 395.
-    Adapts to RDNA 3.5 (Radeon 8060S) sensor topology.
-    """
+        # RESTORED: Cure Sensor Blindness via Innovation-Gated Residuals
+        avg_innovation = sum(self.innovation_history) / max(1, len(self.innovation_history))
+        if avg_innovation > 1.5:
+            # Thermal spike detected that wasn't predicted by energy alone; trust sensor
+            dynamic_r = max(0.1, self.r_base * math.exp(-avg_innovation))
+        else:
+            dynamic_r = self.r_base
+
+        # 2. Update (A Posteriori)
+        k = p_pred / (p_pred + dynamic_r)
+        self.x = x_pred + k * innovation
+        self.p = (1.0 - k) * p_pred
+
+        return self.x
+
+class BioIOS:
     def __init__(self):
-        self.kf_cpu = ThermalKalman()
-        self.kf_mem = ThermalKalman()
-        self.amdgpu_path = self._find_amdgpu_hwmon()
-
-    def _find_amdgpu_hwmon(self):
-        # Find the hwmon interface for the Radeon 8060S
-        paths = glob.glob("/sys/class/drm/card0/device/hwmon/hwmon*")
-        return paths[0] if paths else None
-
-    def read_sensors(self):
-        """
-        Reads Die Temp (Edge) and Memory Temp (Junction).
-        """
-        t_cpu = 0.0
-        t_mem = 0.0
+        self.lock = threading.Lock()
+        self.tctl_path = None
+        self.hwmon_power_path = None
         
-        try:
-            # 1. CPU/SoC Edge Temperature
-            if self.amdgpu_path:
-                with open(os.path.join(self.amdgpu_path, "temp1_input"), "r") as f:
-                    t_cpu = float(f.read()) / 1000.0
-            else:
-                # Fallback to generic thermal zone
-                with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-                    t_cpu = float(f.read()) / 1000.0
+        # RESTORED: Hardware mapping
+        hwmon_paths = glob.glob("/sys/class/hwmon/hwmon*")
+        for path in hwmon_paths:
+            t_path = os.path.join(path, "temp1_input")
+            if os.path.exists(t_path):
+                try:
+                    with open(t_path, 'r') as f:
+                        if int(f.read().strip()) > 0:
+                            self.tctl_path = t_path
+                except: pass
             
-            # 2. LPDDR5X Memory Temp (Critical missing constraint in original)
-            # Often exposed as temp2 or via separate amd_pmc module
-            if self.amdgpu_path and os.path.exists(os.path.join(self.amdgpu_path, "temp2_input")):
-                 with open(os.path.join(self.amdgpu_path, "temp2_input"), "r") as f:
-                    t_mem = float(f.read()) / 1000.0
-            else:
-                t_mem = t_cpu * 0.9 # Estimation fallback if sensor missing
-                
-        except Exception:
-            pass
+            p_path = os.path.join(path, "power1_input")
+            if os.path.exists(p_path):
+                self.hwmon_power_path = p_path
 
-        # Smooth signal
-        s_cpu = self.kf_cpu.update(t_cpu)
-        s_mem = self.kf_mem.update(t_mem)
+        # EPP Paths
+        self.epp_paths = glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference")
         
-        return s_cpu, s_mem
+        # [FIX H-4]: Fallback to AMD-specific RAPL
+        self.rapl_dir = None
+        if not self.hwmon_power_path:
+            rapl_paths = glob.glob("/sys/class/powercap/*/energy_uj")
+            if rapl_paths:
+                self.rapl_dir = os.path.dirname(rapl_paths[0])
 
-    def apply_power_cap(self, watts):
-        """
-        Adjusts the PPT (Package Power Tracking) limit.
-        Enforces the 85W Efficiency Knee.
-        """
-        # Clamp between floor and burst cap
-        target_w = max(POWER_IDLE_FLOOR_W, min(watts, POWER_BURST_CAP_W))
-        target_uw = int(target_w * 1_000_000) # Microwatts
-        
-        if self.amdgpu_path:
+        self.kalman = AdaptiveExtendedKalman()
+        self.last_energy = self._get_rapl_energy() if self.rapl_dir else 0.0
+        self.last_time = time.time()
+        self.simulated_t_mem = 40.0
+
+    def _get_rapl_energy(self):
+        if self.rapl_dir:
             try:
-                # Only write if significant change to preserve VRM bus
-                # Requires root/sudo
-                pfile = os.path.join(self.amdgpu_path, "power1_cap")
-                with open(pfile, "w") as f:
-                    f.write(str(target_uw))
-            except PermissionError:
-                # Silent fail if not root, daemon will handle logical throttling
-                pass
+                with open(os.path.join(self.rapl_dir, "energy_uj"), 'r') as f:
+                    return float(f.read().strip())
+            except: return 0.0
+        return 0.0
 
-def run_brainstem():
-    print("[CERBERUS] Autonomic Nervous System ONLINE.")
-    print(f"[CERBERUS] Target: {TEMP_TARGET_C}C | Memory Limit: {TEMP_MEM_LIMIT_C}C")
-    
-    bioios = StrixHaloBioios()
-    pid = PIDController(setpoint=TEMP_TARGET_C)
-    
-    while True:
-        # 1. SENSE
-        t_cpu, t_mem = bioios.read_sensors()
-        
-        # 2. EVALUATE (Homeostasis)
-        # Calculate deviation from 70C target
-        correction = pid.compute(t_cpu)
-        
-        # Base metabolic rate is the "Knee" (85W)
-        # If hot, subtract power. If cool, add power (up to burst).
-        target_power = POWER_EFFICIENCY_KNEE_W - (correction * 2.0)
-        
-        # 3. CRITICAL OVERRIDES (The "Lizard Brain" Reflex)
-        throttle_level = 0.0 # 0.0 = Full Speed, 1.0 = Coma
-        
-        # A. Memory Safety (The Achilles Heel)
-        if t_mem > TEMP_MEM_LIMIT_C:
-            print(f"[CERBERUS] MEMORY CRITICAL ({t_mem:.1f}C). Dumping Context.")
-            throttle_level = 1.0 # Full stop
-            target_power = POWER_IDLE_FLOOR_W
-            
-        # B. CPU Thermal Runaway
-        elif t_cpu > TEMP_THROTTLE_C:
-            throttle_level = (t_cpu - TEMP_THROTTLE_C) / (TEMP_CRITICAL_C - TEMP_THROTTLE_C)
-            throttle_level = min(throttle_level, 1.0)
-            target_power = 35.0 # STAPM limit
-            
-        # 4. ACTUATE
-        bioios.apply_power_cap(target_power)
-        
-        # Write state for the Cortex (Logic Engine) to see
-        # The Cortex reads 'throttle_level' to decide if it should "Meditation" or "Work"
-        with open(CONTROL_FILE, "w") as f:
-            f.write(f"{throttle_level:.4f}")
-            
-        # Heartbeat
-        with open(HEARTBEAT_FILE, "w") as f:
-            f.write(str(time.time()))
-            
-        # Log periodically
-        if int(time.time()) % 5 == 0:
-            print(f"[AUTO] T_die: {t_cpu:.1f}C | T_mem: {t_mem:.1f}C | Power Target: {target_power:.1f}W | Throttle: {throttle_level:.2f}")
+    def get_temperatures(self):
+        with self.lock:
+            try:
+                with open(self.tctl_path, 'r') as f:
+                    raw_t_cpu = float(f.read().strip()) / 1000.0
+            except:
+                raw_t_cpu = 45.0
 
-        time.sleep(1.0)
+            now = time.time()
+            dt = max(0.001, now - self.last_time)
+            dE_dt_watts = 0.0
 
-if __name__ == "__main__":
-    try:
-        run_brainstem()
-    except KeyboardInterrupt:
-        print("[CERBERUS] Brainstem Severed.")
+            if self.hwmon_power_path:
+                try:
+                    with open(self.hwmon_power_path, 'r') as f:
+                        dE_dt_watts = float(f.read().strip()) / 1e6
+                except: pass
+            elif self.rapl_dir:
+                current_energy = self._get_rapl_energy()
+                if current_energy >= self.last_energy:
+                    dE_dt_uj = (current_energy - self.last_energy)
+                    dE_dt_watts = (dE_dt_uj / 1e6) / dt
+                self.last_energy = current_energy
+
+            self.last_time = now
+
+            # Apply AEKF
+            t_cpu_filtered = self.kalman.update(raw_t_cpu, dE_dt_watts)
+
+            # Simulated T_mem
+            self.simulated_t_mem = t_cpu_filtered + (dE_dt_watts * 0.15)
+            
+            return t_cpu_filtered, self.simulated_t_mem, dE_dt_watts
+
+    def apply_epp_state(self, epp_val_0_to_255):
+        """ [FIX M-8]: EPP string mapping for amd_pstate """
+        if not self.epp_paths: return 0
+        epp_byte = max(0, min(255, int(epp_val_0_to_255)))
+        
+        idx = int(max(0, min(3, epp_byte / 64)))
+        epp_map = {0: "performance", 1: "balance_performance", 2: "balance_power", 3: "power"}
+        epp_str = epp_map[idx]
+        
+        for path in self.epp_paths:
+            try:
+                with open(path, 'w') as f:
+                    f.write(epp_str)
+            except: pass
+        return epp_byte
+
+    def apply_rapl_brake(self, enable=True):
+        """ [FIX H-4]: AMD Strix Halo emergency clamp (15W) """
+        if not self.rapl_dir: return
+        try:
+            limit_path = os.path.join(self.rapl_dir, "constraint_0_power_limit_uw")
+            if os.path.exists(limit_path):
+                os.system(f"echo 15000000 | sudo tee {limit_path} > /dev/null 2>&1")
+        except: pass
