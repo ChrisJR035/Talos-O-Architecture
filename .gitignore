@@ -73,3 +73,6 @@ sys_builder/xrt_local/
 cognitive_plane/cortex/cortex.mlir.prj/
 **/graveyard/
 **/*.tgz
+cognitive_plane/cortex/cortex.mlir.prj/
+**/graveyard/
+**/*.tgz

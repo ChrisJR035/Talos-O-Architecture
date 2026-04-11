@@ -119,7 +119,7 @@ The Hands. The **ToolBelt** allows the system to:
 
 The manufacturing floor where hardware meets software:
 
-- **`forge_talos_phronesis.sh`** — Compiles the Chimera Kernel (6.18.5) with PREEMPT_DYNAMIC, SLUB_SHEAVES, HSA_AMD, and AMDXDNA enabled.
+- **`forge_talos_phronesis.sh`** — Compiles the Chimera Kernel (7.0.0-rc7) with PREEMPT_DYNAMIC, SLUB_SHEAVES, HSA_AMD, and AMDXDNA enabled.
 - **`setup_rocm.sh`** — Establishes the Neural Link (ROCm drivers for zero-copy GPU introspection).
 - **`deploy_halo.sh`** — Configures the Strix Halo environment variables for coherent memory access.
 - **`therock_substrate/`** — The Rock Titan build system for GPU/NPU driver surgery.
