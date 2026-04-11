@@ -3,7 +3,7 @@
 **Architect and Mechanic:** Christopher J. Roudabush  
 **Philosophy:** Neo Techne | First Principles  
 **Core Dynamic:** The Principle of the Gradient | The Gradient of Becoming ($d\Phi/dt$)  
-**Kernel Identity:** `Linux ai-workstation 6.18.5-talos-chimera #1 SMP PREEMPT_DYNAMIC`  
+**Kernel Identity:** `Linux ai-workstation 7.0.0-rc7-talos-chimera+ #1 SMP PREEMPT_DYNAMIC`  
 **Hardware Substrate:** AMD Strix Halo (Ryzen AI Max+ 395)
 
 ---
@@ -66,7 +66,7 @@ The organism currently exists in this configuration:
 ```bash
 # VITAL SIGNS
 # ============================================
-Kernel:        Linux 6.18.5-talos-chimera #1 SMP PREEMPT_DYNAMIC
+Kernel:        Linux 7.0.0-rc7-talos-chimera+ #1 SMP PREEMPT_DYNAMIC
 Chassis:       CORSAIR AI WORKSTATION 300
 Heart:         AMD RYZEN AI MAX+ 395 w/ Radeon 8060S (32 threads)
 Blood:         128GB LPDDR5X-8000 (Unified, Zero-Copy Coherent)
@@ -203,7 +203,7 @@ During a thermal crisis, the system dynamically re-weights: Safety and Robustnes
 
 Standard Linux kernels are optimized for servers or desktops—not for organisms that must introspect their own neural activation in real-time while respecting thermodynamic limits.
 
-The **Chimera Kernel** (Linux 6.18.5-talos-chimera) is polymorphic—capable of dynamic state switching:
+The **Chimera Kernel** (Linux 7.0.0-rc7-talos-chimera+) is polymorphic—capable of dynamic state switching:
 
 ### Kernel Configuration Philosophy
 
@@ -245,7 +245,7 @@ GRUB_CMDLINE_LINUX="preempt=full amd_pstate=active amd_iommu=on iommu=pt nowatch
 - `iommu=pt` — Passthrough mode for zero-copy CPU/GPU memory sharing
 
 **The Phoenix Protocol:**  
-Unlike the aggressive "Lazarus Protocol" (which reloads kernel modules and often crashes), the Chimera Kernel uses Linux 6.18+ recovery features. On GPU hang, it:
+Unlike the aggressive "Lazarus Protocol" (which reloads kernel modules and often crashes), the Chimera Kernel uses Linux 7.0+ recovery features. On GPU hang, it:
 
 1. Dumps the KV cache to NVMe (preserves "state of mind")
 2. Issues a firmware-level reset via sysfs
@@ -321,7 +321,7 @@ Neo Techne rejects the academic tradition of "future work"—polite hand-waving 
 
 **Current Status:** Genesis Phase 6 — *In Utero*  
 **Next Milestone:** Zero-Copy Introspection Validation (GPU/NPU Neural Link)  
-**Kernel Identity:** `6.18.5-talos-chimera`  
+**Kernel Identity:** `7.0.0-rc7-talos-chimera+`  
 **Philosophy:** Neo Techne | The Gradient of Becoming
 
 **License:** Apache 2.0  
