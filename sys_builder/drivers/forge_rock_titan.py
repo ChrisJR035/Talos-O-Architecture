@@ -123,6 +123,29 @@ def amputate_flang_and_cauterize():
     else:
         log(f"CRITICAL: {hook_path} not found.", "RED")
 
+def splice_tensile_dna(therock_dir):
+    log("Splicing Tensile DNA: Forcing gfx1151 to inherit Navi3 WMMA Matrix Cores...", "WARN")
+    tensile_paths = [
+        os.path.join(therock_dir, "rocm-libraries", "projects", "hipblaslt", "tensilelite", "Tensile", "Common.py"),
+        os.path.join(therock_dir, "rocm-libraries", "shared", "tensile", "Tensile", "Common.py")
+    ]
+    for path in tensile_paths:
+        if not os.path.exists(path): continue
+        with open(path, 'r') as f: content = f.read()
+        
+        # Inject ISA
+        if "(11,5,1)" not in content:
+            content = content.replace("(11,0,2)", "(11,0,2), (11,5,1)")
+        
+        # Map Architecture logic (gfx1151 -> gfx1100)
+        if "'gfx1151'" not in content:
+            content = content.replace("'gfx1102':'gfx1100'", "'gfx1102':'gfx1100', 'gfx1151':'gfx1100'")
+            content = content.replace("'gfx1102': 'gfx1100'", "'gfx1102': 'gfx1100', 'gfx1151': 'gfx1100'")
+            content = content.replace('"gfx1102": "gfx1100"', '"gfx1102": "gfx1100", "gfx1151": "gfx1100"')
+        
+        with open(path, 'w') as f: f.write(content)
+        log(f"Mutation Successful: {os.path.basename(os.path.dirname(os.path.dirname(path)))} Tensile matrix patched.", "INFO")
+
 def deploy_minimal_substrate():
     print(f"\n{CYAN}=== INITIATING THE APEX FORGE (v99.4) ==={NC}")
     ensure_host_tools()
@@ -147,6 +170,9 @@ def deploy_minimal_substrate():
     fetch_script = os.path.join(therock_dir, "build_tools", "fetch_sources.py")
     if os.path.exists(fetch_script):
         run_cmd(f"python3 {fetch_script}", cwd=therock_dir)
+        
+    # [INJECT: Mutate Tensile to build native gfx1100 matrix kernels for the APU]
+    splice_tensile_dna(therock_dir)
         
     # --- SURGICAL PATCHING MATRIX ---
     
@@ -199,17 +225,20 @@ export PATH="{BUILD_ROOT}/bin:{BUILD_ROOT}/llvm/bin:$PATH"
 export LD_LIBRARY_PATH="{BUILD_ROOT}/lib:{BUILD_ROOT}/lib64:$LD_LIBRARY_PATH"
 export CMAKE_PREFIX_PATH="{BUILD_ROOT}"
 
-# Strix Halo Native Overrides
-export HSA_OVERRIDE_GFX_VERSION=11.5.1
+# Strix Halo Native Overrides (The Architectural Graft)
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
 export PYTORCH_ROCM_ARCH=gfx1151
 
-# UMA Alignments
+# Thermodynamic Cache Thrashing Antidote (Forces dynamic tile sizing)
+export PYTORCH_TUNABLEOP_ENABLED=1
+
+# UMA Alignments (Zero-Copy)
 export HSA_ENABLE_SDMA=0       
 export HSA_USE_SVM=0           
 export HIP_HOST_COHERENT=1     
 export TORCH_BLAS_PREFER_HIPBLASLT=1
 
-echo "[+] TALOS-O Neural Link Active. Strix Halo UMA Optimizations Engaged."
+echo "[+] TALOS-O Neural Link Active. Strix Halo Architectural Graft Engaged."
 """
     activate_path = os.path.join(BUILD_ROOT, "activate_talos.sh")
     with open(activate_path, "w") as f: f.write(activate_content)
@@ -247,8 +276,10 @@ echo "[+] TALOS-O Neural Link Active. Strix Halo UMA Optimizations Engaged."
         f"-DTHEROCK_ENABLE_SOLVER=ON " 
         f"-DTHEROCK_ENABLE_HIPBLASLTPROVIDER=ON "
         f"-DTHEROCK_ENABLE_ROCPROFV3=ON " 
+        f"-DTHEROCK_ENABLE_FFT=ON "         # [INJECTED] Synthesize hipFFT/rocFFT natively
+        f"-DTHEROCK_ENABLE_RAND=ON "        # [INJECTED] Synthesize hipRAND/rocRAND natively
         
-        f"-DTHEROCK_ENABLE_MIOPEN=OFF "
+        f"-DTHEROCK_ENABLE_MIOPEN=ON "      # [INJECTED] Surrender to the ATen Dispatcher. Grow the organ.
         f"-DBUILD_TESTING=OFF -DBUILD_CLIENTS_TESTS=OFF -DWITH_TESTS=OFF -DROCTRACER_BUILD_TESTS=OFF "
         f"-DTHEROCK_ENABLE_RCCL=OFF -DTHEROCK_ENABLE_COMM_LIBS=OFF -DTHEROCK_ENABLE_DEBUG_TOOLS=OFF "
         f"-DBUILD_WITH_TENSILE=ON -DLLVM_ENABLE_PROJECTS=\"clang;lld;compiler-rt\" -DBUILD_FLANG=OFF "

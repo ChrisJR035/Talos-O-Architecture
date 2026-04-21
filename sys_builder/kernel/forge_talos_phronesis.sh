@@ -173,7 +173,8 @@ echo -e "  ${YELLOW}-> Applying Strix Halo Display & Memory Antidotes...${NC}"
     
     # [FIX]: sg_display=0 is MANDATORY for Strix Halo mode-setting stability.
     # Excludes PCIe ASPM limits to guarantee zero-latency throughout the pipeline.
-    GOOD_ARGS="selinux=0 amdgpu.sg_display=0 amdgpu.cwsr_enable=0 amd_iommu=on iommu=pt amdgpu.svm=1 amdgpu.gpu_recovery=1 ttm.pages_limit=27648000 ttm.page_pool_size=27648000 preempt=full mitigations=off"
+    # [PHASE 1 FIX]: Added amd_pstate=active to expose EPP directories to user-space.
+    GOOD_ARGS="selinux=0 amdgpu.sg_display=0 amdgpu.cwsr_enable=0 amd_iommu=on iommu=pt amdgpu.svm=1 amdgpu.gpu_recovery=1 ttm.pages_limit=27648000 ttm.page_pool_size=27648000 preempt=full mitigations=off amd_pstate=active"
     
     # Purge any previous power-throttling arguments
     sudo grubby --update-kernel="$NEW_VMLINUZ" --remove-args="pcie_aspm=force pcie_aspm.policy=powersave pcie_aspm=off"

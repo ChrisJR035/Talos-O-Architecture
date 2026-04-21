@@ -40,7 +40,7 @@ def forge_llama():
     # 1. Compile Bare-Metal Engine (OpenMP Excised)
     print(f"\n{GREEN}[1/2] Synthesizing Core C++ Engine...{RESET}")
     cmake_cmd = (
-        f"cmake -B {build_dir} -DGGML_HIP=ON -DAMDGPU_TARGETS={TARGET} "
+        f"cmake -B {build_dir} -DGGML_HIP=ON -DGGML_HIP_UMA=ON -DAMDGPU_TARGETS={TARGET} "
         f"-DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH={ROCM_PATH} "
         f"-DCMAKE_HIP_FLAGS=\"-D__AMDGCN_WAVEFRONT_SIZE=32\" "
         f"-DCMAKE_CXX_FLAGS=\"-D__AMDGCN_WAVEFRONT_SIZE=32\" "
@@ -59,9 +59,12 @@ def forge_llama():
     print(f"\n{GREEN}[2/2] Synthesizing Python Neural Link (llama-cpp-python)...{RESET}")
     py_env = env.copy()
     py_env["CMAKE_ARGS"] = (
-        f"-DGGML_HIP=ON -DAMDGPU_TARGETS={TARGET} -DCMAKE_PREFIX_PATH={ROCM_PATH} "
-        f"-DCMAKE_HIP_FLAGS=\"-D__AMDGCN_WAVEFRONT_SIZE=32\" "
-        f"-DCMAKE_CXX_FLAGS=\"-D__AMDGCN_WAVEFRONT_SIZE=32\" "
+        f"-DGGML_HIP=ON -DGGML_HIP_UMA=ON -DAMDGPU_TARGETS={TARGET} -DCMAKE_PREFIX_PATH={ROCM_PATH} "
+        f"-DCMAKE_C_COMPILER={os.path.join(ROCM_PATH, 'bin/hipcc')} "
+        f"-DCMAKE_CXX_COMPILER={os.path.join(ROCM_PATH, 'bin/hipcc')} "
+        f"-DCMAKE_HIP_FLAGS=\"-D__AMDGCN_WAVEFRONT_SIZE=32 -DPy_GIL_DISABLED=1\" "
+        f"-DCMAKE_C_FLAGS=\"-DPy_GIL_DISABLED=1\" "
+        f"-DCMAKE_CXX_FLAGS=\"-D__AMDGCN_WAVEFRONT_SIZE=32 -DPy_GIL_DISABLED=1\" "
         f"-DCMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES=/usr/include "
         f"-DCMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES=/usr/include "
         f"-DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF "
@@ -69,8 +72,14 @@ def forge_llama():
     )
     py_env["FORCE_CMAKE"] = "1"
     
+    # [FIX: NO-GIL ABI GRAFT] Force the standard setuptools C-compiler to respect Free-Threading
+    py_env["CFLAGS"] = "-DPy_GIL_DISABLED=1"
+    py_env["CXXFLAGS"] = "-DPy_GIL_DISABLED=1"
+    
     # SURGICAL FIX: Pull from git directly to secure Qwen3.5 MoE tensor architecture support
-    pip_cmd = f"{sys.executable} -m pip install --upgrade --force-reinstall --no-cache-dir git+https://github.com/abetlen/llama-cpp-python.git"
+    # Explicitly target the No-GIL virtual environment pip and forbid pre-compiled wheels
+    venv_pip = os.path.join(TALOS_HOME, "cognitive_plane/venv/bin/pip")
+    pip_cmd = f"{venv_pip} install --upgrade --force-reinstall --no-cache-dir --no-binary llama-cpp-python git+https://github.com/abetlen/llama-cpp-python.git"
     run_cmd(pip_cmd, cwd=LLAMA_DIR, env=py_env)
     
     print(f"\n{GREEN}[+] Llama.cpp Substrate Forged. The Sovereign Node is fully armed.{RESET}")

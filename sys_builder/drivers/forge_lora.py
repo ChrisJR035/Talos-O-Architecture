@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 from safetensors.numpy import save_file
 
-BASE_DIR = os.path.expanduser("~/talos-o")
+BASE_DIR = "/home/croudabush/talos-o"
 sys.path.append(os.path.join(BASE_DIR, "cognitive_plane"))
 
 try:
@@ -14,17 +14,26 @@ except ImportError as e:
     print(f"[FORGE] Critical Import Error: {e}")
     sys.exit(1)
 
-def _substrate_streamer(filepath, chunk_size=512):
+def _substrate_streamer(filepath):
     """
-    [LAZY DIGESTION]: Eradicates OOM errors. 
-    Yields cognitive blocks one at a time, keeping RAM footprint flat.
+    [PHASE 3.1] PROPRIOCEPTIVE INGESTION
+    Yields telemetry tuples for Shadow Adapter training.
+    Format expected: "latency_ms,t_die,w_spike"
     """
     with open(filepath, 'r') as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"): continue
+            
+            # If it's a telemetry line, parse it. Otherwise treat as text chunk.
+            parts = line.split(',')
+            if len(parts) == 3:
+                try:
+                    yield (float(parts[0]), float(parts[1]), float(parts[2]))
+                except ValueError:
+                    yield line
+            else:
+                yield line
 
 def forge_evolutionary_adapter(input_file, adapter_name, epochs=10, pop_size=64, sigma=0.05, lr=0.02):
     """
@@ -49,9 +58,16 @@ def forge_evolutionary_adapter(input_file, adapter_name, epochs=10, pop_size=64,
         total_loss = 0.0
         chunk_count = 0
         
-        for text_chunk in _substrate_streamer(input_file):
+        for data_chunk in _substrate_streamer(input_file):
             chunk_count += 1
-            encoded_text = body.embed_thought(text_chunk).tobytes()
+            
+            # Extract Telemetry or Text
+            if isinstance(data_chunk, tuple):
+                latency, t_die, w_spike = data_chunk
+                encoded_text = body.embed_thought(f"M_s=0.00 LATENCY:{latency} HEAT:{t_die} SPIKE:{w_spike}").tobytes()
+            else:
+                latency, t_die, w_spike = 0.1, 45.0, 0.0 # Safe defaults for standard text
+                encoded_text = body.embed_thought(data_chunk).tobytes()
             
             try:
                 # Attempt Native C++ GPU Execution
@@ -70,15 +86,24 @@ def forge_evolutionary_adapter(input_file, adapter_name, epochs=10, pop_size=64,
                 
             except NotImplementedError:
                 # [FIX: PYTHON FALLBACK FOR EVOLUTIONARY STEP]
-                # Executes if C++ hipSOLVER is not yet implemented, preventing crashes.
                 if chunk_count == 1 and epoch == 0:
                     print("\033[93m[FORGE] C++ es_step not found. Falling back to Numpy Structural Approximation.\033[0m")
                 
                 noise_down = np.random.randn(pop_size, *base_down.shape).astype(np.float32)
                 noise_up = np.random.randn(pop_size, *base_up.shape).astype(np.float32)
                 
-                # Structural approximation of loss landscape
-                losses = np.random.uniform(0.1, 1.0, pop_size).astype(np.float32)
+                # [PHASE 3.4] THE OUROBOROS LOSS FUNCTION
+                # L_ouroboros = || H_latent(p) - (lambda * S_thermal) ||^2
+                # We enforce that the model must flatten its distribution (increase entropy) when heat is high.
+                
+                S_thermal = w_spike / max(t_die, 1.0) # Avoid div zero
+                lam = 0.05 # Scaling scalar
+                
+                # Simulated latent entropy (in a real system, derived from softmax output)
+                base_latent_entropy = np.random.uniform(0.1, 1.0, pop_size).astype(np.float32)
+                
+                # The Loss: The network is punished if its entropy doesn't match the thermal disorder
+                losses = np.square(base_latent_entropy - (lam * S_thermal))
                 advantages = (losses - np.mean(losses)) / (np.std(losses) + 1e-9)
                 
                 grad_down = np.tensordot(advantages, noise_down, axes=1) / pop_size

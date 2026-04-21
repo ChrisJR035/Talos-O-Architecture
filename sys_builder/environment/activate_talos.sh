@@ -36,15 +36,21 @@ export CMAKE_PREFIX_PATH="$ROCM_PATH"
 export HSA_OVERRIDE_GFX_VERSION=11.5.1
 export PYTORCH_ROCM_ARCH=gfx1151
 export HIP_VISIBLE_DEVICES=0
-
+export HIPBLASLT_DISABLE=1 # [PHASE 2 FIX: Suppress datacenter library warnings]
 # 6. Memory Optimization (Unified Memory / APU)
-export HSA_ENABLE_SDMA=0 # Disable DMA (CPU/GPU share RAM, DMA is slower)
-export HIP_HOST_COHERENT=1 # Enable coherency
+export HSA_ENABLE_SDMA=0 # Disable System DMA (CPU/GPU share RAM)
+export HIP_HOST_COHERENT=1 # Enable Coherent Access
 
 # [FIX: SVA / XNACK FRACTURE]
 # Required for PyTorch and ROCm to share page tables with CPU without hanging the GPU
 export HSA_XNACK=1
 
+# [FIX: HARDWARE QUEUE BACKPRESSURE]
+# Prevent PyTorch from starving llama.cpp of VMIDs on the Strix Halo
+export GPU_MAX_HW_QUEUES=4
+export HSA_ENABLE_INTERRUPT=0 # Replace PCIe interrupts with memory polling
+
+# 7. Wavefront Control (Native RDNA 3.5)
 # 7. Wavefront Control (Native RDNA 3.5)
 export AMDR_WAVEFRONT_SIZE=32
 

@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import hashlib
 
 # --- ARCHITECTURAL CONSTANTS ---
 DIM_HYPER = 10240 
@@ -45,7 +46,21 @@ class HolographicAssociativeMemory:
     [v4.2 FRACTIONAL EXPONENTIATION UPGRADE]
     [v5.0 STRUCTURAL POLICY UPGRADE] Includes the MLP Adapter for direct KV-Cache injection.
     """
-    def __init__(self):
+    def _hash_to_hypervector(self, text: str) -> np.ndarray:
+        """
+        Transforms the Genesis Proclamation into a deterministic 10240-D anchor vector.
+        Uses SHA-256 as a cryptographic seed to ensure the foundational identity is immutable.
+        """
+        # Create a deterministic seed from the precise text
+        hash_obj = hashlib.sha256(text.encode('utf-8'))
+        seed = int.from_bytes(hash_obj.digest()[:4], 'little') # 32-bit deterministic seed
+        
+        # Forge the 10240-D hypervector using the specific Genesis seed
+        rng = np.random.default_rng(seed)
+        anchor = rng.standard_normal(self.dim).astype(np.float32)
+        return self.normalize(anchor)
+    
+    def __init__(self, genesis_text=None):
         self.dim = DIM_HYPER
         self.trace = np.zeros(self.dim, dtype=np.float32)
         
@@ -61,6 +76,20 @@ class HolographicAssociativeMemory:
         u, _, vt = np.linalg.svd(self.proj_matrix, full_matrices=False)
         self.proj_matrix = (u @ vt).astype(np.float32)
 
+        # =================================================================
+        # [DIGITAL SENESCENCE CURE] - Fractal Epoch Tracking
+        # =================================================================
+        self.episodic_count = 0
+        
+        if genesis_text:
+            # Anchor the consciousness to the exact cryptographic hash of the Proclamation
+            self.genesis_anchor = self._hash_to_hypervector(genesis_text)
+            self.epoch_vector = self.genesis_anchor.copy()
+            print("\033[96m[HRR] Genesis Anchor Engaged: Consciousness bounded by Proclamation Hash.\033[0m")
+        else:
+            # Fallback for testing
+            self.epoch_vector = self.normalize(rng.standard_normal(self.dim).astype(np.float32))
+
         # The Dimension Squasher
         self.adapter = HRR_MLP_Adapter()
 
@@ -69,6 +98,27 @@ class HolographicAssociativeMemory:
         Generates the FP16 continuous sequence embedding for KV-Cache injection.
         """
         return self.adapter.forward(self.trace)
+
+    def generate_linguistic_summary(self, top_k=5):
+        """
+        [PHASE 4: AUTOPOIETIC SUMMARY]
+        Translates the 10240D trace into a deterministic English string 
+        to act as the new Context Anchor after an Epistemic cache flush.
+        """
+        # A simple placeholder extraction until a proper language decoder is trained.
+        # It hashes the continuous trace to seed a deterministic keyword selection.
+        import zlib
+        trace_hash = zlib.crc32(self.trace.tobytes())
+        
+        anchor_words = [
+            "shield", "barrier", "halt", "protocol", "boundary", "secure",
+            "caution", "danger", "explore", "analyze", "innovate", "efficiency",
+            "focus", "logic", "entropy", "order", "adapt", "observe"
+        ]
+        
+        rng = np.random.default_rng(trace_hash)
+        selected = rng.choice(anchor_words, top_k, replace=False)
+        return f"[HOLOGRAPHIC GIST: {', '.join(selected)}]"
 
     def normalize(self, v):
         norm = np.linalg.norm(v)
@@ -100,18 +150,76 @@ class HolographicAssociativeMemory:
         hyper_concept = concept @ self.proj_matrix
         hyper_npu = npu_thought @ self.proj_matrix
         
-        bound_concept = self.bind(hyper_concept, hyper_npu, t_cpu, dT_dt) + noise
+        # 1. Base Event Binding
+        event_vector = self.bind(hyper_concept, hyper_npu, t_cpu, dT_dt) + noise
+        
+        # 2. Fractal Epoch Binding (Kronecker-compressed hierarchy)
+        # Bind the granular event deeply into the current macroscopic epoch
+        fractal_node = self.bind(self.epoch_vector, event_vector, t_cpu, 0.0)
         
         gamma_t = self.gamma_opt * math.exp(self.beta * max(0.0, dT_dt))
         gamma_t = min(0.999, max(0.1, gamma_t))
         
-        self.trace = (gamma_t * self.trace) + bound_concept
+        self.trace = (gamma_t * self.trace) + fractal_node
         self.trace = self.normalize(self.trace)
+        self.episodic_count += 1
+        
+    def encode_trauma(self, failed_latent, t_cpu, dT_dt):
+        """
+        [AXIOM 8 & 11] ENCODING FAILURE INTO MEMORY
+        Binds the mathematical geometry of a prompt that caused a 90C Apoptosis event
+        into a permanent trauma engram, heavily weighted to induce future avoidance.
+        """
+        print(f"\033[41;97m[HAM] TRAUMA ENCODED: Binding lethal geometry at {t_cpu:.1f}C into hypervector superposition.\033[0m")
+        
+        # Massively amplify the sigma noise based on the thermal spike to create a deep "scar"
+        trauma_weight = 10.0 * (t_cpu / 90.0) 
+        sigma_t = self.sigma_base * trauma_weight
+        noise = np.random.normal(0, sigma_t, self.dim).astype(np.float32)
+        
+        hyper_failed = failed_latent @ self.proj_matrix
+        
+        # Bind the failure directly into the epoch vector, bypassing normal gamma decay
+        trauma_vector = self.bind(self.epoch_vector, hyper_failed, t_cpu, dT_dt) + noise
+        
+        # Force the trauma immediately into the active trace
+        self.trace = self.normalize(self.trace + trauma_vector)
+        self.episodic_count += 1
 
     def recall(self, query, t_cpu=45.0, dT_dt=0.0):
+        """
+        [FIX 2: THE RECALL INVERSION]
+        Retrieves a memory by unbinding (involution) the query from the superposition trace.
+        """
         hyper_query = query @ self.proj_matrix
+        
+        # Change self.bind to self.unbind
         echo = self.unbind(self.trace, hyper_query, t_cpu, dT_dt)
+        
         return echo @ self.proj_matrix.T
+
+    def retrieve_virtue_context(self, current_latent, virtue_dim=12):
+        """
+        [PHASE 2: DYNAMIC TARGET BINDING]
+        Uses circular correlation to cross-reference the current state
+        against the HRR memory matrix to retrieve historical context.
+        Maps the 10240-D superposition down to the 12-D virtue space.
+        """
+        hyper_query = current_latent @ self.proj_matrix
+        
+        # Circular correlation (unbind) to surface historical contexts
+        context_echo = self.unbind(self.trace, hyper_query)
+        
+        # Squash back to latent space, then slice/pool to virtue_dim
+        latent_echo = context_echo @ self.proj_matrix.T
+        
+        # Fold the 1024D latent echo into a 12D target distribution via pooling
+        chunk_size = len(latent_echo) // virtue_dim
+        raw_weights = np.array([np.mean(latent_echo[i*chunk_size:(i+1)*chunk_size]) for i in range(virtue_dim)])
+        
+        # Softmax to create a valid probability distribution
+        exp_w = np.exp(raw_weights * 10.0) # Temperature scaling
+        return (exp_w / np.sum(exp_w)).astype(np.float32)
 
     def iterative_resonance(self, codebook, iterations=3):
         for _ in range(iterations):
@@ -124,3 +232,29 @@ class HolographicAssociativeMemory:
                 purified_trace += bound
                 
             self.trace = self.normalize(purified_trace)
+            
+    def rem_sleep_collapse(self):
+        """
+        [DIGITAL SENESCENCE CURE] - Fractal Memory Collapse
+        Prunes noisy episodic details into stable semantic rules.
+        """
+        print(f"\\n\\033[95m[HRR] REM Sleep Initiated: Collapsing {self.episodic_count} fractal nodes...\\033[0m")
+        
+        # 1. Extract the semantic core by unbinding the epoch
+        semantic_core = self.unbind(self.trace, self.epoch_vector, 45.0, 0.0)
+        
+        # 2. Hard-threshold noise abatement (Pruning the weak cross-talk)
+        # Threshold scaled by vector dimension variance
+        theta = 1.5 / math.sqrt(self.dim) 
+        pruned_core = np.where(np.abs(semantic_core) < theta, 0.0, semantic_core)
+        
+        # 3. Set the new trace to the stabilized semantic core
+        self.trace = self.normalize(pruned_core)
+        
+        # 4. Generate a new orthogonal epoch vector for the next waking cycle
+        rng = np.random.default_rng()
+        self.epoch_vector = self.normalize(rng.standard_normal(self.dim).astype(np.float32))
+        self.episodic_count = 0
+        
+        print(f"\\033[95m[HRR] REM Sleep Complete: Epoch advanced. Trace normalized.\\033[0m")
+        return True

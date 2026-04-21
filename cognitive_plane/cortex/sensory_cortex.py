@@ -169,14 +169,31 @@ class SensoryProjector:
                     
                 latent_batch[b] = frame_vector
                 
-            return self._layernorm(latent_batch)
+            out = self._layernorm(latent_batch)
 
         elif modality == "ethernet":
             h = np.dot(x, self.net_w1) + self.net_b1
             h = gelu(h)
             out = np.dot(h, self.net_w2) + self.net_b2
-            return self._layernorm(out)
+            out = self._layernorm(out)
 
+        # [PHASE 3.7] Salience-Gated Ignition (The Thalamic Filter)
+        # Convert latent vector to probability distribution to find Shannon Entropy
+        p = np.abs(out) / (np.sum(np.abs(out), axis=-1, keepdims=True) + 1e-9)
+        h_ingress = -np.sum(p * np.log2(p + 1e-9), axis=-1)
+        theta_salience = 9.0  # Novelty Threshold
+        
+        # Dispatch Routing based on Thermodynamic Cost
+        for i, entropy in enumerate(h_ingress):
+            if entropy > theta_salience:
+                # High Novelty: Wake the 35B Executive Cortex via the NPU
+                print(f"\\033[95m[SENSORY] Salience Spike (H={entropy:.2f}). Igniting Executive Cortex.\\033[0m")
+                # (Logic to write to /talos_npu_matrix goes here)
+            else:
+                # Boring/Static: Route to low-power 1.5B Default Mode Network
+                pass 
+                
+        return out
     def _layernorm(self, x, eps=1e-5):
         mean = np.mean(x, axis=-1, keepdims=True)
         var = np.var(x, axis=-1, keepdims=True)

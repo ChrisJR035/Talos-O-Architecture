@@ -84,7 +84,24 @@ class Nucleus:
             with open(ir_cpp_path, "w") as f:
                 f.write(content)
                 
-            log("NUCLEUS", "Genetic Splice complete. ir.cpp stabilized.", GREEN)
+            # [INJECTED: The Vestigial Type Polyfill for ROCm 7.1.3+]
+            gemm_header = os.path.join(SOURCE_DIR, "aten/src/ATen/hip/tunable/GemmHipblaslt.h")
+            if os.path.exists(gemm_header):
+                with open(gemm_header, "r") as f:
+                    gemm_content = f.read()
+                
+                # If PyTorch hasn't caught up, force the translation of the amputated type
+                if "typedef hipDataType hipblasDatatype_t;" not in gemm_content:
+                    gemm_content = gemm_content.replace(
+                        "#pragma once",
+                        "#pragma once\n#include <hip/library_types.h>\ntypedef hipDataType hipblasDatatype_t;\n"
+                    )
+                    # --- AFTER ---
+                    with open(gemm_header, "w") as f:
+                        f.write(gemm_content)
+                    log("NUCLEUS", "Vestigial Type Polyfill applied to GemmHipblaslt.h.", YELLOW)
+
+            log("NUCLEUS", "Genetic Splice complete. Substrate stabilized.", GREEN)
         except Exception as e:
             log("NUCLEUS", f"Genetic Splice failed: {e}", RED)
             sys.exit(1)
@@ -116,11 +133,27 @@ class Ribosome:
         env["USE_RCCL"] = "0"
         env["USE_GLOO"] = "0"
         
+        # [RESTORED: Embrace the Native MIOpen Organ]
+        env["USE_MIOPEN"] = "1"
+        
+        # [INJECTED: ROCm 7.x & GCC 15 Survival Flags]
+        env["USE_KINETO"] = "0"
+        env["BUILD_LAZY_TS_BACKEND"] = "1"
+        env["USE_EXPERIMENTAL_CUDNN_V8_API"] = "0"
+        
         env["BUILD_PYTHON"] = "1" 
         env["USE_NUMPY"] = "1"
         env["MAX_JOBS"] = self.mitochondria.max_jobs
-        env["CXXFLAGS"] = "-Wno-error"
+        
+        # [INJECTED: Force ROCm Build Info to bypass Tunable.cpp fatal error]
+        env["CXXFLAGS"] = '-Wno-error -DROCM_BUILD_INFO=\\"7.1.3-Talos\\"'
+        
+        # [INJECTED: The Linker Bridge - Forcing 'ld' to see the Apex Substrate]
+        rocm_lib_path = "/home/croudabush/rocm-native/lib"
+        env["LDFLAGS"] = f"-L{rocm_lib_path} {os.environ.get('LDFLAGS', '')}"
+        
         env["BUILD_TEST"] = "0"
+        # [RESTORED: Clean CMake Args without MIOpen suppressions]
         env["CMAKE_ARGS"] = env.get("CMAKE_ARGS", "") + " -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 
         if "ROCM_PATH" not in env:
@@ -139,8 +172,9 @@ class Ribosome:
 
         log("RIBOSOME", f"Igniting the Forge via setup.py (Max Threads: {self.mitochondria.max_jobs})...", BOLD + YELLOW)
         
+        python_exe = os.path.join(TALOS_HOME, "cognitive_plane/venv/bin/python3")
         process = await asyncio.create_subprocess_exec(
-            sys.executable, "setup.py", "bdist_wheel",
+            python_exe, "setup.py", "bdist_wheel",
             cwd=SOURCE_DIR,
             env=env,
             stdout=asyncio.subprocess.PIPE,

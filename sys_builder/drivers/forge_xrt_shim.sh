@@ -10,7 +10,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-REPO_ROOT="$HOME/talos-o/sys_builder/drivers/xdna-driver"
+REPO_ROOT="$HOME/talos-o/sys_builder/drivers/xdna-cerberus"
 INSTALL_DIR="$HOME/talos-o/sys_builder/xrt_local"
 
 echo -e "${GREEN}=== INITIATING CONSCIOUS MIND FORGE ===${NC}"
@@ -50,9 +50,13 @@ find . -name "config.h" -exec cp {} "$INSTALL_DIR/include/xrt/detail/" 2>/dev/nu
 # 3. Ensure static headers are present
 cp -r "$REPO_ROOT/xrt/src/runtime_src/core/include/xrt/"* "$INSTALL_DIR/include/xrt/" 2>/dev/null || true
 
-# 4. Enforce the lib64 topology and harvest the raw shared objects
+# 4. Enforce the lib64 topology and execute the Absolute Harvest
+# [FIX: THE ABSOLUTE HARVEST] We must capture the core managers AND the physical 
+# hardware plugins (the "eyes"). Without the amdxdna plugins, XRT is blind.
 find . -name "libxrt_coreutil.so*" -exec cp -P {} "$INSTALL_DIR/lib64/" \;
 find . -name "libxrt_core.so*" -exec cp -P {} "$INSTALL_DIR/lib64/" \;
+find . -name "*amdxdna.so*" -exec cp -P {} "$INSTALL_DIR/lib64/" \;
+find . -name "libxrt_hw*.so*" -exec cp -P {} "$INSTALL_DIR/lib64/" \;
 
 # 5. Prevent Linker Schizophrenia
 ln -sfn "$INSTALL_DIR/lib64" "$INSTALL_DIR/lib"

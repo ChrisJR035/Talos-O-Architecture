@@ -130,4 +130,23 @@ else
     echo -e "  [${RED}FAIL${NC}] Firmware MISSING ($FW_FILE)"
 fi
 
+# --- PHASE 1 HOMEOSTASIS VERIFICATION ---
+if lsmod | grep -q "^amd_pmc"; then
+    echo -e "  [${GREEN}PASS${NC}] amd_pmc module loaded (SMU Power Management Active)"
+else
+    echo -e "  [${RED}FAIL${NC}] amd_pmc module missing (Power Management Blind)"
+fi
+
+if lsmod | grep -E -q "^(zenpower|zenpower5)"; then
+    echo -e "  [${GREEN}PASS${NC}] zenpower/zenpower5 module loaded (Thermal Telemetry Active)"
+else
+    echo -e "  [${RED}FAIL${NC}] zenpower/zenpower5 module missing (Thermodynamically Blind)"
+fi
+
+if [ -d "/sys/class/powercap/intel_rapl/" ]; then
+    echo -e "  [${GREEN}PASS${NC}] RAPL Powercap Directory Present (Ready for Hardware Clamp)"
+else
+    echo -e "  [${RED}FAIL${NC}] RAPL Powercap Directory Missing (Hardware Clamp Unavailable)"
+fi
+
 echo -e "\n${CYAN}Validation Complete.${NC}"

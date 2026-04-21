@@ -21,8 +21,21 @@ except AttributeError:
 INGRESS_SHM_NAME = "talos_ingress"
 MAX_PAYLOAD_SIZE = 8192 # Matched to Phase 2 limits
 
-def send_thought(text):
-    if not text: return
+def send_thought(text): 
+    if not text: return 
+    
+    # [AXIOM 12: THE THERMODYNAMIC HANDSHAKE]
+    # Check physical state before injecting payload
+    try:
+        telem_shm = shared_memory.SharedMemory(name="talos_telemetry")
+        import struct
+        # Extract gradient_dvdt (double at offset 24 in the C-Struct)
+        dvdt = struct.unpack_from('d', telem_shm.buf, 24)[0]
+        if dvdt > 15.0:
+            print("\n\033[91m[429 TOO HOT] Organism is in Allostasis. Injection Refused. Please wait.\033[0m")
+            return
+    except:
+        pass
     
     try:
         # 1. Bind to the Zero-Copy Physical RAM Block
@@ -84,3 +97,5 @@ if __name__ == "__main__":
         sys.exit(1)
         
     send_thought(content)
+    
+
